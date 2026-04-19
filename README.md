@@ -2,6 +2,8 @@
 
 This project builds machine learning models to classify human kidney cell types using single-cell RNA sequencing (scRNA-seq) data. The data comes from five published research studies, merged into a single dataset of over 60,000 individual kidney cells. Each cell is described by the expression levels of 2,358 genes, and the goal is to predict which type of kidney cell each one is.
 
+**Note:** This is an introductory project intended to help students understand the core concepts and workflow of applied machine learning — data loading, exploratory analysis, preprocessing, feature selection, model training, hyperparameter tuning, and evaluation. The results are modest by design. The focus is on understanding the process clearly, not on achieving state-of-the-art classification performance. scRNA-seq cell type classification is a well-studied problem and much higher accuracy is achievable with more advanced methods, larger training sets, and domain-specific preprocessing. Those are not the goals here.
+
 The project is structured as four sequential Jupyter notebooks, each handling one stage of the pipeline. The notebooks are designed for students learning applied machine learning, and every step is explained in plain language alongside the code.
 
 ---
@@ -514,26 +516,118 @@ All libraries except `scikit-optimize` are pre-installed in Google Colab. `sciki
 
 ## Results Summary
 
-Results will vary depending on which input file is used (`kidney_cells_clean.csv` vs `kidney_cells_top_classes.csv`), the random seed, and the hyperparameters found by the search. The tables below will be filled in after running the notebooks.
+These results were produced using `kidney_cells_top_classes.csv` (the top 10 most abundant cell types) as the input to Notebook 2.
 
 ### Feature Reduction (Notebook 2)
 
 | Stage | Features Remaining |
 |---|---|
 | Original gene columns | 2,358 |
-| After zero-variance removal | — |
-| After high-null removal (>90%) | — |
-| After VarianceThreshold (0.01) | — |
-| After RFE | — |
+| After zero-variance removal | 2,289 |
+| After high-null removal (>90%) | 2,289 |
+| After VarianceThreshold (0.01) | 2,289 |
+| After RFE (best k = 17) | 17 |
+
+**17 genes selected by RFE:** `ACVRL1`, `AFP`, `APOBEC3G`, `ATP2B1`, `ATP5A1`, `ATP5G3`, `AVPR2`, `AZGP1`, `BRD2`, `BTBD7`, `BTG3`, `CA2`, `CD96`, `CRYAB`, `CXCL14`, `CYBA`, `LINC02421`
+
+**RFE sweep results:**
+
+| k (features) | Weighted F1 |
+|---|---|
+| 572 | 0.3703 |
+| 286 | 0.3987 |
+| 143 | 0.4052 |
+| 71 | 0.4085 |
+| 35 | 0.4220 |
+| **17** | **0.4740** |
+| 8 | 0.4658 |
+| 4 | 0.4404 |
+| 2 | 0.3532 |
+| 1 | 0.3288 |
 
 ### Model Performance (Notebooks 3 and 4)
 
 | Model | Weighted F1 | ROC-AUC | Precision | Recall |
 |---|---|---|---|---|
-| KNN (baseline) | — | — | — | — |
-| KNN (tuned, RandomizedSearch) | — | — | — | — |
-| SVM (baseline) | — | — | — | — |
-| SVM (tuned, BayesSearch) | — | — | — | — |
+| KNN (baseline, k=5) | 0.5674 | 0.7970 | — | — |
+| KNN (tuned, k=24, manhattan, distance) | 0.5787 | 0.8398 | 0.5676 | 0.6108 |
+| SVM (baseline, RBF) | 0.5216 | 0.8569 | — | — |
+| SVM (tuned, C=100, γ=0.024, RBF) | 0.5213 | 0.8641 | 0.6331 | 0.4747 |
+
+**KNN wins on Weighted F1 (0.5787 vs 0.5213). SVM wins on ROC-AUC (0.8641 vs 0.8398) and Precision (0.6331 vs 0.5676).**
+
+### Per-Class F1 — KNN (tuned)
+
+| Cell Type | F1 | Test cells |
+|---|---|---|
+| Distal Convoluted Tubule | 0.121 | 72 |
+| Loop of Henle and Parietal Epithelium | 0.130 | 73 |
+| Thick Ascending Limb | 0.165 | 109 |
+| Ascending Thin Limb | 0.223 | 124 |
+| Collecting Duct Intercalated | 0.278 | 117 |
+| Collecting Duct Principal | 0.367 | 179 |
+| Endothelium | 0.513 | 95 |
+| T cells | 0.627 | 137 |
+| Myeloid | 0.691 | 104 |
+| Proximal Tubule | highest | 989 |
+
+### Per-Class F1 — SVM (tuned)
+
+| Cell Type | F1 | Test cells |
+|---|---|---|
+| Distal Convoluted Tubule | 0.148 | 72 |
+| Ascending Thin Limb | 0.199 | 124 |
+| Loop of Henle and Parietal Epithelium | 0.237 | 73 |
+| Endothelium | 0.263 | 95 |
+| Collecting Duct Intercalated | 0.268 | 117 |
+| Thick Ascending Limb | 0.277 | 109 |
+| Collecting Duct Principal | 0.375 | 179 |
+| T cells | 0.606 | 137 |
+| Myeloid | 0.651 | 104 |
+| Proximal Tubule | highest | 989 |
+
+---
+
+## Interpretation
+
+These results are modest, and that is expected. This is an introductory project — the goal is to understand the end-to-end machine learning workflow applied to biological data, not to build a production cell type classifier.
+
+### What the numbers mean
+
+Both models achieve a weighted F1 around 0.52–0.58, which means they are doing better than random but are far from reliable classifiers across all 10 cell types. The ROC-AUC scores are more encouraging (~0.84 for KNN, ~0.86 for SVM), which tells us the models have genuine discriminative ability in a probabilistic sense — but that ability does not always translate into clean hard predictions at a fixed decision threshold.
+
+The per-class results tell a clearer story. Proximal Tubule — the most abundant class at nearly 50% of the data — gets classified well by both models. The rare cell types (Distal Convoluted Tubule: 72 cells, Loop of Henle: 73 cells) get F1 scores below 0.15. This is a direct consequence of imbalance. With so few examples of these types in the training set, the model simply does not see enough of them to learn reliable patterns.
+
+KNN and SVM make different trade-offs. KNN has higher recall (0.61) — it correctly identifies more cells overall, but makes more mistakes in the process. SVM has higher precision (0.63) — when it predicts a cell type, it is more often right, but it misses more cells (recall 0.47). Neither is clearly better; which matters more depends on the application.
+
+### Why the performance is limited
+
+Several factors contribute to the modest results:
+
+- **Small training set:** We sampled 10,000 cells from ~50,000 available. The rarest classes in the training set have only a few hundred examples.
+- **Aggressive feature reduction:** RFE selected only 17 genes from 2,358. This was necessary to keep the pipeline fast in Colab, but 17 genes is very few for distinguishing 10 biologically related cell types. Many informative genes were likely discarded.
+- **Class imbalance:** Proximal Tubule makes up ~50% of the training data in the top-10 subset. Both models are pulled toward predicting the dominant class.
+- **KNN and SVM are not the standard tools for scRNA-seq:** In research, dedicated tools like Seurat and scANVI are used, which are specifically designed for the sparsity and batch-effect properties of single-cell data. Standard ML models applied here are intentionally simplified.
+
+### Ways to improve the models
+
+This project keeps things simple on purpose. For students who want to go further:
+
+**Reduce the class imbalance**
+- Keep all 22 classes but run on the full 60,000-cell dataset. More data generally helps minority classes.
+- Use a larger value of k in RFE to keep more genes.
+
+**Better hyperparameter search**
+- Increase `n_iter` in RandomizedSearchCV (Notebook 3) and BayesSearchCV (Notebook 4) to explore more combinations. The current setting of 20 trials is minimal.
+
+**Better features**
+- Try using all 2,358 genes without RFE and see how a simple KNN or linear SVM performs. In high-dimensional gene expression space, more features are not always worse.
+- Use log-normalisation before scaling: applying `log(count + 1)` to gene expression counts is standard in scRNA-seq analysis and often improves model performance.
+
+**More representative sampling**
+- Deliberately oversample rare cell types in the 10,000-cell sample, rather than sampling proportionally. This gives the model more examples of hard-to-classify cell types.
+
+These improvements are not implemented here because the purpose of this project is to teach the fundamentals clearly, step by step. Each notebook is short enough to run and understand in one session.
 
 ---
 
