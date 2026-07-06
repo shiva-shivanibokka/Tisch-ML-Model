@@ -1,14 +1,18 @@
 # Kidney Cell-Type Classification from Single-Cell RNA-seq
 
-Classifying human kidney cell types from single-cell gene expression, with a leakage-free, CPU-reproducible ML pipeline (KNN vs. SVM).
+Classifying human kidney cell types from single-cell gene expression — a leakage-free, CPU-reproducible ML pipeline (KNN vs. SVM), packaged and deployed as a live serving API with an interactive demo.
+
+### 🔬 [Live demo → tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/)
+
+Click a real held-out kidney cell and the deployed model predicts its type in real time. *(Hosted on Fly.io; the machine sleeps when idle, so the first request may take a few seconds to wake it.)*
 
 ---
 
 ## Recruiter TL;DR
 
-- **What it does:** Takes ~60,000 single kidney cells (each described by 2,358 gene expression values, pooled from five independent published studies) and trains machine-learning models to predict each cell's type — an automated alternative to slow, expert-driven manual annotation.
+- **What it does:** Takes ~60,000 single kidney cells (each described by 2,358 gene expression values, pooled from five independent published studies) and trains machine-learning models to predict each cell's type — then serves the winning model behind a REST API and interactive web demo.
 - **Hardest problem solved:** Doing the evaluation *honestly* on heavily imbalanced biological data. Class balancing (SMOTE + majority undersampling) is applied **inside each cross-validation fold**, not before the split — eliminating a common data-leakage trap that had previously inflated the cross-validated score to ~0.98 while the true test performance was far lower.
-- **Impact / result:** After the fix, the cross-validated score matches held-out test performance (SVM **CV 0.80 ≈ test 0.80 weighted F1**, ROC-AUC **0.97**) — evidence the numbers are real and reproducible, not optimistic artefacts.
+- **Impact / result:** The fixed pipeline is reproducible end-to-end (SVM **CV 0.80 ≈ test 0.80 weighted F1**, ROC-AUC **0.97** — CV matching test proves no leakage), and the model is **[live and serving predictions](https://tisch-kidney-classifier.fly.dev/)** on Fly.io.
 
 ---
 
@@ -17,6 +21,7 @@ Classifying human kidney cell types from single-cell gene expression, with a lea
 - [Overview & Motivation](#overview--motivation)
 - [Results](#results)
 - [Architecture](#architecture)
+- [Serving & Deployment](#serving--deployment)
 - [Skills Demonstrated](#skills-demonstrated)
 - [Tech Stack](#tech-stack)
 - [Getting Started](#getting-started)
@@ -127,13 +132,41 @@ flowchart TD
 
 ---
 
+## Serving & Deployment
+
+The same pipeline is packaged (`src/kidney_scrna/`) and served. `train.py` runs the whole thing headless and exports a **compact, deployable model** — a `StandardScaler → RBF-SVC` pipeline over just the 293 selected genes (12.7 MB). SMOTE + undersampling are applied *only while training*; they are **not** part of the served pipeline, which takes raw gene-expression values and returns calibrated class probabilities.
+
+A **[FastAPI](https://tisch-kidney-classifier.fly.dev/) service** exposes it:
+
+| Endpoint | Method | Returns |
+|---|---|---|
+| `/` | GET | Interactive demo page (click a real held-out cell → live prediction) |
+| `/health` | GET | Liveness probe (`{status, model_available}`) |
+| `/model` | GET | Metadata: model type, the 293 genes, 10 class labels, test metrics |
+| `/predict` | POST | `{features: {gene: value, …}}` → `{prediction, confidence, top3, model_type}` |
+
+Every prediction is logged as a structured JSON line. The service is containerised (`Dockerfile`) and **deployed live on Fly.io** (`fly.toml`), built via Fly's remote builder — the 120 MB image bakes in only the model + demo samples; the 292 MB dataset is never shipped.
+
+```bash
+python train.py                              # train + export artifacts/ (~35 min CPU; --quick for a smoke test)
+uvicorn kidney_scrna.serve:app --reload      # run the API + demo locally at http://localhost:8000
+pytest                                       # run the test suite
+fly deploy                                   # deploy to Fly.io
+```
+
+---
+
 ## Skills Demonstrated
 
+- **Production ML deployment / MLOps** — a headless training CLI that exports a versioned model artifact, a serving layer decoupled from the training/notebook code, and a live containerised deployment on a cloud host.
+- **RESTful API design** — a FastAPI service with health, metadata, and prediction endpoints, request validation, typed responses, and structured JSON logging.
+- **Containerization & cloud deployment** — Docker image (non-root, minimal) deployed to **Fly.io** via a remote builder, with a `/health` check and scale-to-zero configuration.
 - **Data engineering / ETL pipeline design** — a staged pipeline that moves raw 292 MB scRNA-seq data through cleaning, label harmonisation across five heterogeneous studies, and feature selection into a model-ready form, with artefacts passed between stages.
 - **Rigorous ML evaluation & data-leakage prevention** — fit-on-train-only preprocessing and per-fold resampling inside `imblearn` pipelines; CV/test agreement used as the correctness check.
 - **Feature selection on high-dimensional data** — Recursive Feature Elimination with a fast SGD-trained linear-SVM ranker, reducing 2,358 sparse gene features to 293.
 - **Class-imbalance handling** — combined SMOTE oversampling + majority undersampling to a fixed per-class cap.
 - **Hyperparameter optimisation** — `RandomizedSearchCV` (KNN) and Bayesian optimisation via `BayesSearchCV` / scikit-optimize (SVM).
+- **Automated testing** — a `pytest` suite covering the data, feature-selection, model, evaluation, and API layers (including FastAPI `TestClient` tests).
 - **Model evaluation & comparison** — weighted F1, ROC-AUC (one-vs-rest), per-class precision/recall, confusion matrices, ROC curves, and a fair head-to-head model comparison.
 - **System design & communication** — documented design decisions and trade-offs; every step explained for a learning audience.
 
@@ -141,9 +174,9 @@ flowchart TD
 
 ## Tech Stack
 
-Pure-Python, CPU-only, reproducible from `requirements.txt` — no GPU, cloud account, or notebook-hosting service required.
+CPU-only and reproducible from `requirements.txt` — no GPU required. The package installs with `pip install -e .` (see [`pyproject.toml`](pyproject.toml)).
 
-| Library | Role |
+| Library / Tool | Role |
 |---|---|
 | `pandas`, `numpy` | Data loading and manipulation |
 | `scikit-learn` | KNN, SVM, preprocessing, feature selection, metrics, CV search |
@@ -151,6 +184,10 @@ Pure-Python, CPU-only, reproducible from `requirements.txt` — no GPU, cloud ac
 | `scikit-optimize` | `BayesSearchCV` (Bayesian hyperparameter search for the SVM) |
 | `scipy` | Sampling distributions for randomised search |
 | `matplotlib`, `seaborn` | EDA plots, confusion matrices, ROC curves |
+| `FastAPI`, `uvicorn`, `pydantic` | Serving API + interactive demo, request validation |
+| `joblib` | Model serialization (the deployed artifact) |
+| `pytest` | Test suite (data, features, models, evaluation, API) |
+| `Docker`, `Fly.io` | Containerization and live cloud deployment |
 
 Exact pinned versions are in [`requirements.txt`](requirements.txt).
 
@@ -169,7 +206,7 @@ cd Tisch-ML-Model
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# 3. Install dependencies
+# 3. Install dependencies (or `pip install -e .` to also install the package)
 pip install -r requirements.txt
 
 # 4. Put the dataset CSV in this folder, then launch Jupyter
@@ -177,6 +214,8 @@ jupyter lab
 ```
 
 Run the notebooks **in order** — `01` → `02` → `03` → `04`. Each writes intermediate CSVs (git-ignored) that the next reads. By default `data_dir = Path('.')` (the repo folder); on Google Colab instead, mount Drive and point `data_dir` at your Drive folder (a commented snippet is included in each notebook's setup cell).
+
+To train and serve the model instead of stepping through the notebooks, see [Serving & Deployment](#serving--deployment) (`python train.py` → `uvicorn kidney_scrna.serve:app`).
 
 To run headlessly:
 
@@ -195,17 +234,33 @@ jupyter nbconvert --to notebook --execute --inplace 04_svm.ipynb
 
 ```
 Tisch-ML-Model/
-├── 01_eda_loading.ipynb        # Load, harmonise labels, drop rare classes, EDA, save cleaned data
-├── 02_preprocessing.ipynb      # Subsample, train/test split, leakage-safe feature reduction → 293 genes
-├── 03_knn.ipynb                # KNN + RandomizedSearchCV, saves best params
-├── 04_svm.ipynb                # SVM + BayesSearchCV, KNN-vs-SVM comparison
-├── requirements.txt            # Pinned dependencies
+├── 01_eda_loading.ipynb        # Teaching notebook: load, harmonise, drop rare classes, EDA
+├── 02_preprocessing.ipynb      # Teaching notebook: subsample, split, leakage-safe reduction → 293 genes
+├── 03_knn.ipynb                # Teaching notebook: KNN + RandomizedSearchCV
+├── 04_svm.ipynb                # Teaching notebook: SVM + BayesSearchCV, KNN-vs-SVM comparison
+│
+├── src/kidney_scrna/           # Installable package (the notebook logic, reusable + tested)
+│   ├── config.py               #   paths, constants, label map
+│   ├── data.py                 #   load / clean / harmonise / subsample / split
+│   ├── features.py             #   leakage-free reduction + SGD-ranked RFE
+│   ├── models.py               #   KNN/SVM search pipelines + deployable-model builder
+│   ├── evaluate.py             #   metrics (weighted F1, ROC-AUC, per-class)
+│   └── serve.py                #   FastAPI app + interactive demo page
+├── train.py                    # Headless CLI: run pipeline → export artifacts/
+├── artifacts/                  # model.joblib (served), metrics.json, examples.json (demo samples)
+├── tests/                      # pytest suite (data, features, models, evaluate, API)
+│
+├── Dockerfile, .dockerignore   # Container image (bakes the model, not the dataset)
+├── fly.toml                    # Fly.io deployment config
+├── pyproject.toml              # Package metadata (`pip install -e .`)
+├── requirements.txt            # Pinned dependencies (CPU-only)
+├── docs/superpowers/           # Design spec + implementation plan
 ├── LICENSE                     # MIT
 ├── .gitignore                  # Excludes the 292 MB dataset + generated intermediate files
 └── README.md
 ```
 
-Generated at runtime (git-ignored): `kidney_cells_clean.csv`, `kidney_cells_top_classes.csv`, `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`, `knn_best_params.json`.
+The four notebooks remain the **teaching pipeline** (every step explained); `src/kidney_scrna/` is the same logic factored into a tested, importable, and deployable package. Generated at runtime (git-ignored): `kidney_cells_clean.csv`, `kidney_cells_top_classes.csv`, `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`, `knn_best_params.json`.
 
 ---
 
@@ -274,18 +329,27 @@ In **both** model notebooks, class balancing is an `imblearn.Pipeline` step (`Ra
 
 ## Testing & Reproducibility
 
-There is **no unit-test suite** — this is an analysis pipeline, not a software library. Correctness is instead established by:
+The `src/kidney_scrna/` package has a **`pytest` suite** (`tests/`) covering the data, feature-selection, model, and evaluation modules, plus the API (via FastAPI's `TestClient`):
 
-- **Fixed seeds** (`random_state=42`) throughout, so runs are reproducible.
-- **Leakage checks by construction** — preprocessing fit on train only; resampling confined to CV folds.
+```bash
+pytest            # runs tests/test_config.py, test_data.py, test_features.py,
+                  #      test_models.py, test_evaluate.py, test_api.py
+```
+
+Correctness is further established by:
+
+- **Fixed seeds** (`random_state=42`) throughout — `train.py` reproduces the notebooks' numbers exactly (SVM test F1 `0.8036`).
+- **Leakage checks by construction** — preprocessing fit on train only; resampling confined to CV folds and the training set.
 - **CV ≈ test agreement** as an empirical correctness signal (see [Results](#results)).
-- **Pinned dependencies** in `requirements.txt` for a reproducible environment.
+- **Pinned dependencies** in `requirements.txt`.
+
+*(There is no CI pipeline configured; tests are run locally.)*
 
 ---
 
 ## Deployment
 
-Not deployed, by design — this is a notebook-based analysis/portfolio project, not a service. It runs anywhere Python + the dependencies are installed; no server, container, or cloud account is involved.
+**Live on Fly.io: [tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/).** The `Dockerfile` builds a minimal non-root image (~120 MB) that bakes in the trained model and demo samples — never the 292 MB dataset. It is deployed with `fly deploy` using Fly's remote builder (no local Docker required), configured (`fly.toml`) with a `/health` check and scale-to-zero so it costs nothing while idle. See [Serving & Deployment](#serving--deployment) for the full flow.
 
 ---
 
@@ -295,7 +359,8 @@ Not deployed, by design — this is a notebook-based analysis/portfolio project,
 - Add `log1p` normalisation before scaling (standard for scRNA-seq counts).
 - Try a linear-kernel SVM and regularised logistic regression as high-dimensional baselines.
 - Compare against purpose-built single-cell tools (Seurat label transfer, scANVI) to quantify the gap standard ML leaves on the table.
-- Package the shared preprocessing/resampling logic into an importable module and add unit tests around the leakage-safety guarantees.
+- Add a CI workflow (GitHub Actions) to run `pytest` on every push.
+- Extend the serving API with batch prediction and simple request-rate metrics.
 
 ---
 
