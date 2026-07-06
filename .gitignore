@@ -20,6 +20,10 @@ __pycache__/
 .venv/
 venv/
 env/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
 
 # Tooling / OS
 .ruff_cache/
