@@ -2,6 +2,10 @@
 
 Classifying human kidney cell types from single-cell gene expression — a leakage-free, CPU-reproducible ML pipeline (KNN vs. SVM), packaged and deployed as a live serving API with an interactive demo.
 
+[![CI](https://github.com/shiva-shivanibokka/Tisch-ML-Model/actions/workflows/ci.yml/badge.svg)](https://github.com/shiva-shivanibokka/Tisch-ML-Model/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
+
 ### 🔬 [Live demo → tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/)
 
 Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature. *(Hosted on Fly.io; the machine sleeps when idle, so the first request may take a few seconds to wake it.)*
@@ -166,7 +170,7 @@ fly deploy                                   # deploy to Fly.io
 - **Feature selection on high-dimensional data** — Recursive Feature Elimination with a fast SGD-trained linear-SVM ranker, reducing 2,358 sparse gene features to 293.
 - **Class-imbalance handling** — combined SMOTE oversampling + majority undersampling to a fixed per-class cap.
 - **Hyperparameter optimisation** — `RandomizedSearchCV` (KNN) and Bayesian optimisation via `BayesSearchCV` / scikit-optimize (SVM).
-- **Automated testing** — a `pytest` suite covering the data, feature-selection, model, evaluation, and API layers (including FastAPI `TestClient` tests).
+- **Automated testing & CI/CD** — a `pytest` suite covering the data, feature-selection, model, evaluation, and API layers (including FastAPI `TestClient` tests), run automatically on every push via a GitHub Actions pipeline.
 - **Model evaluation & comparison** — weighted F1, ROC-AUC (one-vs-rest), per-class precision/recall, confusion matrices, ROC curves, and a fair head-to-head model comparison.
 - **System design & communication** — documented design decisions and trade-offs; every step explained for a learning audience.
 
@@ -343,7 +347,7 @@ Correctness is further established by:
 - **CV ≈ test agreement** as an empirical correctness signal (see [Results](#results)).
 - **Pinned dependencies** in `requirements.txt`.
 
-*(There is no CI pipeline configured; tests are run locally.)*
+The suite runs automatically on every push and pull request via **GitHub Actions** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
 
 ---
 
@@ -359,7 +363,6 @@ Correctness is further established by:
 - Add `log1p` normalisation before scaling (standard for scRNA-seq counts).
 - Try a linear-kernel SVM and regularised logistic regression as high-dimensional baselines.
 - Compare against purpose-built single-cell tools (Seurat label transfer, scANVI) to quantify the gap standard ML leaves on the table.
-- Add a CI workflow (GitHub Actions) to run `pytest` on every push.
 - Extend the serving API with batch prediction and simple request-rate metrics.
 
 ---
