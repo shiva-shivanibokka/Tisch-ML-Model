@@ -1,38 +1,25 @@
 # Python dependencies for the Kidney scRNA-seq ML project.
 #
-# The notebooks are written for Google Colab, where pandas/numpy/matplotlib/
-# seaborn/scikit-learn/scipy are already installed. This file pins the versions
-# the project was developed and last run against, so the pipeline is reproducible
-# outside Colab (or if Colab's defaults change).
+# CPU-only and reproducible; no GPU/cuML/Colab required. Versions are pinned to
+# what the project was developed and last run against.
 #
 # Install with:  pip install -r requirements.txt
+# (or `pip install -e .` to install the kidney_scrna package itself)
 
+# --- Core pipeline (notebooks + package) ---
 pandas>=2.0
 numpy>=1.24
-matplotlib>=3.7
-seaborn>=0.12
 scikit-learn>=1.3
 scipy>=1.10
+imbalanced-learn>=0.11        # SMOTE + RandomUnderSampler (balancing inside CV folds)
+scikit-optimize>=0.9          # BayesSearchCV (SVM hyperparameter search)
 
-# Notebook 2 — SMOTE oversampling of the training set
-imbalanced-learn>=0.11
+# --- EDA / notebook plots ---
+matplotlib>=3.7
+seaborn>=0.12
 
-# Notebook 4 — Bayesian hyperparameter search (BayesSearchCV)
-scikit-optimize>=0.9
-
-# ---------------------------------------------------------------------------
-# GPU acceleration (Notebooks 3 and 4) — NOT installed via this file.
-#
-# Notebooks 3 and 4 use RAPIDS cuML for GPU-accelerated KNN and SVM. cuML is
-# not a plain pip package: it requires an NVIDIA GPU + CUDA, and is installed
-# inside the notebooks from NVIDIA's package index:
-#
-#   pip install cuml-cu12 --extra-index-url=https://pypi.nvidia.com
-#
-# In Google Colab this means selecting a GPU runtime (Runtime > Change runtime
-# type > T4 GPU) before running Notebooks 3 and 4.
-#
-# To run on CPU instead, replace the cuML imports with their scikit-learn
-# equivalents (sklearn.neighbors.KNeighborsClassifier, sklearn.svm.SVC) —
-# the rest of the code is unchanged. Expect substantially longer run times.
-# ---------------------------------------------------------------------------
+# --- Serving layer (train.py + FastAPI API + demo) ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+joblib>=1.3
