@@ -4,7 +4,7 @@ Classifying human kidney cell types from single-cell gene expression — a leaka
 
 ### 🔬 [Live demo → tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/)
 
-Click a real held-out kidney cell and the deployed model predicts its type in real time. *(Hosted on Fly.io; the machine sleeps when idle, so the first request may take a few seconds to wake it.)*
+Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature. *(Hosted on Fly.io; the machine sleeps when idle, so the first request may take a few seconds to wake it.)*
 
 ---
 
@@ -140,12 +140,12 @@ A **[FastAPI](https://tisch-kidney-classifier.fly.dev/) service** exposes it:
 
 | Endpoint | Method | Returns |
 |---|---|---|
-| `/` | GET | Interactive demo page (click a real held-out cell → live prediction) |
+| `/` | GET | Interactive demo page (see below) |
 | `/health` | GET | Liveness probe (`{status, model_available}`) |
 | `/model` | GET | Metadata: model type, the 293 genes, 10 class labels, test metrics |
 | `/predict` | POST | `{features: {gene: value, …}}` → `{prediction, confidence, top3, model_type}` |
 
-Every prediction is logged as a structured JSON line. The service is containerised (`Dockerfile`) and **deployed live on Fly.io** (`fly.toml`), built via Fly's remote builder — the 120 MB image bakes in only the model + demo samples; the 292 MB dataset is never shipped.
+The **demo page** (`/`) is a self-contained single-page UI: click a real held-out cell (one per cell type) or draw a random one, and the result renders inline right below the picker — the predicted cell type with a ✓/✗ against the true label, the **top-3** most likely types with probabilities, and the cell's **293-gene expression signature** (each gene z-scored against the training average; cyan = under-expressed, red = over-expressed). It also surfaces header stat tiles (Test F1 0.804, ROC-AUC 0.969, 293 genes, 10 cell types) and a per-class F1 panel. Every prediction is logged as a structured JSON line. The service is containerised (`Dockerfile`) and **deployed live on Fly.io** (`fly.toml`), built via Fly's remote builder — the 120 MB image bakes in only the model + demo samples; the 292 MB dataset is never shipped.
 
 ```bash
 python train.py                              # train + export artifacts/ (~35 min CPU; --quick for a smoke test)
