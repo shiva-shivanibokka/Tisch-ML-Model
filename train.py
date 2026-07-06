@@ -47,6 +47,7 @@ def main() -> None:
     _log("loading + cleaning ...")
     df = data.select_top_classes(data.basic_clean(data.load_raw()))
     X, y = data.split_features_target(df)
+    n_probes = X.shape[1]
     X, y = data.subsample(X, y)
     Xtr, Xte, ytr, yte = data.make_split(X, y)
     _log(f"split: {len(Xtr)} train / {len(Xte)} test")
@@ -88,6 +89,9 @@ def main() -> None:
     winner = evaluate.winner_by_f1(m_knn, m_svm)
     _log(f"winner by weighted F1: {winner}")
 
+    per_class = evaluate.per_class_f1(yte, svm_pred, classes)
+    scaler = deployable.named_steps["scaler"]
+
     joblib.dump({"model": deployable, "genes": list(genes), "model_type": "SVM (RBF)",
                  "classes": classes}, config.MODEL_PATH)
     config.METRICS_PATH.write_text(json.dumps(
@@ -96,13 +100,22 @@ def main() -> None:
                                  for k, v in knn.best_params_.items()}},
          "svm": {**m_svm, "cv_f1": float(svm.best_score_), "best_params": bp},
          "winner": winner, "n_train": len(Xtr), "n_test": len(Xte),
-         "n_genes": len(genes),
-         "per_class_svm": evaluate.per_class_f1(yte, svm_pred, classes)}, indent=2))
+         "n_genes": len(genes), "per_class_svm": per_class}, indent=2))
 
-    # Demo samples: real held-out cells (up to 2 per class), raw selected-gene values.
+    # Demo data baked into the serving image: metrics, per-class F1, per-gene training
+    # stats (for the expression readout), and real held-out cells to click.
     demo = {"genes": list(genes), "classes": classes, "model_type": "SVM (RBF)",
             "metrics": {"weighted_f1": round(m_svm["weighted_f1"], 4),
-                        "roc_auc": round(m_svm["roc_auc"], 4)}, "samples": []}
+                        "roc_auc": round(m_svm["roc_auc"], 4),
+                        "precision": round(m_svm["precision"], 4),
+                        "recall": round(m_svm["recall"], 4)},
+            "n_train": len(Xtr), "n_test": len(Xte), "n_probes": n_probes,
+            "per_class": {c: {"f1": round(v["f1"], 4), "support": v["support"]}
+                          for c, v in per_class.items()},
+            "stats": {g: {"mean": round(float(scaler.mean_[i]), 4),
+                          "std": round(float(scaler.scale_[i]) or 1.0, 4)}
+                      for i, g in enumerate(genes)},
+            "samples": []}
     yte_r = yte.reset_index(drop=True)
     Xte_r = Xte[genes].reset_index(drop=True)
     for cls in classes:
