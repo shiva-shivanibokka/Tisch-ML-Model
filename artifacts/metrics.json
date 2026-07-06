@@ -1,0 +1,71 @@
+{
+  "knn": {
+    "weighted_f1": 0.6338362664532988,
+    "roc_auc": 0.9142936247599939,
+    "precision": 0.7835079286117794,
+    "recall": 0.57475,
+    "cv_f1": 0.6467727112698034,
+    "best_params": {
+      "metric": "manhattan",
+      "n_neighbors": 24,
+      "weights": "distance"
+    }
+  },
+  "svm": {
+    "weighted_f1": 0.8035708874136004,
+    "roc_auc": 0.9690667148762471,
+    "precision": 0.8323092310939019,
+    "recall": 0.78775,
+    "cv_f1": 0.8005312304576129,
+    "best_params": {
+      "C": 17.76576664980768,
+      "gamma": 0.00032780432870046914
+    }
+  },
+  "winner": "SVM",
+  "n_train": 16000,
+  "n_test": 4000,
+  "n_genes": 293,
+  "per_class_svm": {
+    "Ascending Thin Limb": {
+      "f1": 0.7096774193548387,
+      "support": 247
+    },
+    "Collecting Duct Intercalated": {
+      "f1": 0.5797101449275363,
+      "support": 234
+    },
+    "Collecting Duct Principal": {
+      "f1": 0.7331460674157303,
+      "support": 359
+    },
+    "Distal Convoluted Tubule": {
+      "f1": 0.3793911007025761,
+      "support": 145
+    },
+    "Endothelium": {
+      "f1": 0.9402597402597402,
+      "support": 189
+    },
+    "Loop of Henle and Parietal Epithelium": {
+      "f1": 0.42857142857142855,
+      "support": 147
+    },
+    "Myeloid": {
+      "f1": 0.8631090487238979,
+      "support": 208
+    },
+    "Proximal Tubule": {
+      "f1": 0.8903544929925804,
+      "support": 1979
+    },
+    "T": {
+      "f1": 0.9632352941176471,
+      "support": 274
+    },
+    "Thick Ascending Limb": {
+      "f1": 0.6374133949191686,
+      "support": 218
+    }
+  }
+}
