@@ -13,8 +13,10 @@ Run locally:
 from __future__ import annotations
 import json
 import logging
+import math
 import sys
 import time
+import warnings
 from typing import Any
 
 import joblib
@@ -23,6 +25,11 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from . import config
+
+# Models trained before build_deployable_svm switched to a nameless scaler carry
+# feature names, which sklearn warns about when we send positional arrays. New
+# models don't; this keeps the request logs clean for either.
+warnings.filterwarnings("ignore", message="X does not have valid feature names")
 
 logger = logging.getLogger("kidney_scrna.serve")
 if not logger.handlers:
@@ -105,6 +112,9 @@ def predict(req: PredictRequest) -> PredictResponse:
     missing = [g for g in genes if g not in req.features]
     if missing:
         raise HTTPException(422, f"Missing {len(missing)} gene(s), e.g. {missing[:5]}")
+    bad = [g for g in genes if not math.isfinite(req.features[g])]
+    if bad:
+        raise HTTPException(422, f"Non-finite value(s) for gene(s): {bad[:5]}")
     row = [[float(req.features[g]) for g in genes]]
     t0 = time.time()
     proba = model.predict_proba(row)[0]

@@ -1,5 +1,6 @@
 """Central configuration: paths, constants, and label maps."""
 from __future__ import annotations
+import os
 from pathlib import Path
 
 RANDOM_SEED = 42
@@ -21,7 +22,9 @@ LABEL_MAP = {"PT": "Proximal Tubule", "DT": "Distal Convoluted Tubule",
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW_CSV = ROOT / "Tisch24_MergedscRNA_80-85PctVAR.csv"
-ARTIFACTS_DIR = ROOT / "artifacts"
+# Artifacts live at <repo>/artifacts by default; override for non-editable installs
+# or custom deploys with KIDNEY_ARTIFACTS_DIR.
+ARTIFACTS_DIR = Path(os.environ.get("KIDNEY_ARTIFACTS_DIR", ROOT / "artifacts"))
 MODEL_PATH = ARTIFACTS_DIR / "model.joblib"
 METRICS_PATH = ARTIFACTS_DIR / "metrics.json"
 EXAMPLES_PATH = ARTIFACTS_DIR / "examples.json"

@@ -1,6 +1,7 @@
 """Model search pipelines (leakage-free) and the compact deployable model."""
 from __future__ import annotations
 from collections import Counter
+import numpy as np
 from scipy.stats import randint
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -51,10 +52,13 @@ def build_deployable_svm(X_train_raw, y_train, C, gamma,
                          cap: int = config.CAP, seed: int = config.RANDOM_SEED) -> Pipeline:
     """Fit StandardScaler->SVC on raw selected-gene values. SMOTE+undersample are
     applied to the scaled training data before fitting the SVC, but the RETURNED
-    pipeline contains only scaler+svc (samplers do nothing at predict time)."""
-    scaler = StandardScaler().fit(X_train_raw)
-    Xs = scaler.transform(X_train_raw)
-    Xr, yr = Xs, y_train
+    pipeline contains only scaler+svc (samplers do nothing at predict time).
+
+    The scaler is fit on a nameless array so the served model expects positional
+    input (as the API sends) without emitting sklearn feature-name warnings."""
+    X = np.asarray(X_train_raw, dtype=float)
+    scaler = StandardScaler().fit(X)
+    Xr, yr = scaler.transform(X), y_train
     for _, sampler in make_resamplers(cap=cap, seed=seed):
         Xr, yr = sampler.fit_resample(Xr, yr)
     svc = SVC(kernel="rbf", C=C, gamma=gamma, probability=True,

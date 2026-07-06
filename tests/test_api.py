@@ -28,3 +28,14 @@ def test_predict_on_baked_sample():
 
 def test_predict_missing_genes_422():
     assert client.post("/predict", json={"features": {"NOPE": 1.0}}).status_code == 422
+
+
+def test_predict_rejects_nan():
+    # NaN isn't valid standard JSON, so send a raw body with a literal NaN token
+    # (which Python's json parser accepts) to reach the finite-value check.
+    sample = json.loads(config.EXAMPLES_PATH.read_text())["samples"][0]
+    feats = dict(sample["features"])
+    feats[next(iter(feats))] = -987654.321          # unique sentinel
+    body = json.dumps({"features": feats}).replace("-987654.321", "NaN")
+    r = client.post("/predict", content=body, headers={"content-type": "application/json"})
+    assert r.status_code == 422

@@ -29,3 +29,7 @@ dist/
 .ruff_cache/
 .DS_Store
 Thumbs.db
+
+# Local-only audit working docs (not part of the published project)
+docs/AUDIT.md
+docs/PLAN.md
