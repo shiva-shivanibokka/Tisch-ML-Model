@@ -1,1 +1,27 @@
+# Raw dataset (292 MB) — download separately, keep out of the repo
 Tisch24_MergedscRNA_80-85PctVAR.csv
+
+# Intermediate artifacts produced by the notebooks (regenerated on each run)
+kidney_cells_clean.csv
+kidney_cells_top_classes.csv
+X_train.csv
+X_test.csv
+y_train.csv
+y_test.csv
+knn_best_params.json
+
+# Jupyter / Colab
+.ipynb_checkpoints/
+*/.ipynb_checkpoints/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Tooling / OS
+.ruff_cache/
+.DS_Store
+Thumbs.db

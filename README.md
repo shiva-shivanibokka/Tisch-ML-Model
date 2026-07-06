@@ -1,185 +1,193 @@
-# Kidney Cell Type Classification — scRNA-seq Machine Learning Project
+# Kidney Cell-Type Classification from Single-Cell RNA-seq
 
-This project builds machine learning models to classify human kidney cell types using single-cell RNA sequencing (scRNA-seq) data. The data comes from five published research studies, merged into a single dataset of over 60,000 individual kidney cells. Each cell is described by the expression levels of 2,358 genes, and the goal is to predict which type of kidney cell each one is.
+Classifying human kidney cell types from single-cell gene expression, with a leakage-free, CPU-reproducible ML pipeline (KNN vs. SVM).
 
-**Note:** This is an introductory project intended to help students understand the core concepts and workflow of applied machine learning — data loading, exploratory analysis, preprocessing, feature selection, model training, hyperparameter tuning, and evaluation. The results are modest by design. The focus is on understanding the process clearly, not on achieving state-of-the-art classification performance. scRNA-seq cell type classification is a well-studied problem and much higher accuracy is achievable with more advanced methods, larger training sets, and domain-specific preprocessing. Those are not the goals here.
+---
 
-The project is structured as four sequential Jupyter notebooks, each handling one stage of the pipeline. The notebooks are designed for students learning applied machine learning, and every step is explained in plain language alongside the code.
+## Recruiter TL;DR
+
+- **What it does:** Takes ~60,000 single kidney cells (each described by 2,358 gene expression values, pooled from five independent published studies) and trains machine-learning models to predict each cell's type — an automated alternative to slow, expert-driven manual annotation.
+- **Hardest problem solved:** Doing the evaluation *honestly* on heavily imbalanced biological data. Class balancing (SMOTE + majority undersampling) is applied **inside each cross-validation fold**, not before the split — eliminating a common data-leakage trap that had previously inflated the cross-validated score to ~0.98 while the true test performance was far lower.
+- **Impact / result:** After the fix, the cross-validated score matches held-out test performance (SVM **CV 0.80 ≈ test 0.80 weighted F1**, ROC-AUC **0.97**) — evidence the numbers are real and reproducible, not optimistic artefacts.
 
 ---
 
 ## Table of Contents
 
-- [Background](#background)
-- [The Dataset](#the-dataset)
-- [The Five Studies](#the-five-studies)
-- [Label Harmonisation](#label-harmonisation)
-- [Cell Types in This Dataset](#cell-types-in-this-dataset)
+- [Overview & Motivation](#overview--motivation)
+- [Results](#results)
+- [Architecture](#architecture)
+- [Skills Demonstrated](#skills-demonstrated)
+- [Tech Stack](#tech-stack)
+- [Getting Started](#getting-started)
 - [Project Structure](#project-structure)
-- [How to Run](#how-to-run)
-- [Notebook 1 — EDA and Loading](#notebook-1--eda-and-loading)
-- [Notebook 2 — Preprocessing and Feature Selection](#notebook-2--preprocessing-and-feature-selection)
-- [Notebook 3 — K-Nearest Neighbours](#notebook-3--k-nearest-neighbours)
-- [Notebook 4 — Support Vector Machine and Model Comparison](#notebook-4--support-vector-machine-and-model-comparison)
+- [The Dataset](#the-dataset)
+- [The Five Studies & Label Harmonisation](#the-five-studies--label-harmonisation)
+- [Pipeline in Detail](#pipeline-in-detail)
 - [Key Design Decisions](#key-design-decisions)
-- [Libraries Used](#libraries-used)
-- [Results Summary](#results-summary)
+- [Testing & Reproducibility](#testing--reproducibility)
+- [Deployment](#deployment)
+- [Roadmap / Future Work](#roadmap--future-work)
+- [License](#license)
 
 ---
 
-## Background
+## Overview & Motivation
 
-### What is scRNA-seq?
+Single-cell RNA sequencing (scRNA-seq) measures gene expression in individual cells. Every cell carries the same DNA, but different cell types switch on different genes — and that expression pattern is what distinguishes a proximal tubule cell from a T cell. Traditionally, scientists label cell types by hand using known marker genes: accurate, but slow and expertise-heavy. With datasets of tens of thousands of cells from multiple studies, machine learning offers a way to learn those expression patterns and classify cells automatically.
 
-Single-cell RNA sequencing (scRNA-seq) is a laboratory technique that allows scientists to measure gene expression in individual cells. Every cell in your body contains the same DNA, but different cell types activate different genes. A kidney cell and a blood cell have the same genetic code, but they express different genes — and it is that pattern of gene expression that makes them different.
+This project is an **educational, end-to-end applied-ML walkthrough** built around that problem. It is intentionally scoped for clarity over state-of-the-art accuracy — the goal is to demonstrate the full workflow (loading, EDA, leakage-safe preprocessing, feature selection, hyperparameter tuning, evaluation, model comparison) done *correctly*, with every step explained in plain language alongside the code. Dedicated single-cell tools (Seurat, scANVI) achieve higher accuracy; standard ML models are used here deliberately because the point is the process.
 
-scRNA-seq works by isolating individual cells, capturing the RNA molecules inside each one (RNA is the messenger that carries instructions from DNA to make proteins), and sequencing them to get a count of how many copies of each gene's RNA were present. The result is a table where each row is a single cell and each column is a gene, and the values are the RNA count for that gene in that cell.
-
-### Why machine learning?
-
-Traditionally, scientists would label cell types by hand by looking at known marker genes (genes that are known to be highly expressed in one particular cell type). This is accurate but slow and requires expert knowledge. With datasets containing tens of thousands of cells from multiple studies, machine learning offers a way to automate this process — learning the gene expression patterns that distinguish each cell type and applying those patterns to classify new cells automatically.
-
-### Why kidney cells?
-
-The kidney is made up of many specialised cell types, each performing a different function — filtering blood, reabsorbing nutrients, secreting waste, regulating blood pressure, and more. Understanding which cells are affected in kidney diseases like diabetic nephropathy or chronic kidney disease requires knowing exactly what type each cell is. This dataset merges cells from five independent human kidney studies, covering both healthy and diseased tissue.
+> **Note on scope:** results are modest by design. This is a teaching pipeline, not a production cell-type classifier.
 
 ---
 
-## The Dataset
+## Results
 
-**File:** `Tisch24_MergedscRNA_80-85PctVAR.csv`  
-**Size:** 292 MB  
-**Rows:** 60,725 (one row per cell)  
-**Columns:** 2,367 total — 9 metadata columns + 2,358 gene expression columns
+All numbers below come directly from executing the notebooks in this repo (`random_state=42`, top-10 cell types, 20,000-cell stratified subsample → 16,000 train / 4,000 test, 293 selected genes).
 
-The filename refers to the TISCH2 database (Tumor Immune Single-cell Hub, 2024 edition), and the "80–85% VAR" part means the dataset was filtered to retain only the genes that explain 80–85% of the total variance across all cells. This pre-filtering was done to keep the file size manageable while preserving the most biologically informative genes.
+### Model comparison (held-out test set)
 
-### Metadata Columns
+| Model | Weighted F1 | ROC-AUC | Precision | Recall |
+|---|---|---|---|---|
+| KNN (tuned: k=24, manhattan, distance) | 0.6338 | 0.9143 | 0.7835 | 0.5748 |
+| **SVM (tuned: RBF, C≈17.8, γ≈3.3e-4)** | **0.8036** | **0.9691** | **0.8323** | **0.7877** |
 
-| Column | Type | Description |
+**SVM wins on all four metrics.**
+
+### Why these numbers are trustworthy (leakage-free evaluation)
+
+Because class balancing happens *inside* the cross-validation loop, the cross-validated score is an honest estimate — and it lands right next to the held-out test score:
+
+| Model | Cross-val Weighted F1 | Test Weighted F1 |
 |---|---|---|
-| `Cell_ID` | Text | Unique identifier for each cell (e.g. `NK1_GGGAACGCGCCA`) |
-| `nCount_RNA` | Integer | Total number of RNA molecules detected in the cell |
-| `nFeature_RNA` | Integer | Number of distinct genes detected in the cell |
-| `StudyOrigin_Author` | Text | Which research study the cell came from |
-| `percent.mt` | Decimal | Percentage of RNA from mitochondrial genes (a quality control metric) |
-| `Sex` | Text | Patient sex (Male / Female / missing) |
-| `Sampling_Location` | Text | Where in the kidney the tissue was sampled from |
-| `Age` | Text | Patient age range (e.g. "60 – 69") |
-| `Cell_Labels` | Text | **The target variable — the cell type label** |
+| KNN | 0.5974 | 0.6338 |
+| SVM | 0.8005 | 0.8036 |
 
-### Gene Expression Columns
+A large gap between CV and test is the classic signature of leakage; here there is none. (An earlier version that oversampled *before* cross-validation reported a CV score near 0.98 — a textbook example of the trap this pipeline is built to avoid.)
 
-The remaining 2,358 columns are named after human genes (e.g. `ABCG2`, `ABO`, `AANAT`). Each value is an integer count representing how many RNA molecules from that gene were detected in that particular cell. The vast majority of these values are zero — see [Sparsity](#sparsity) below.
+### Baseline → tuned
 
-### Sparsity
+| Model | Baseline F1 | Tuned F1 | Baseline AUC | Tuned AUC |
+|---|---|---|---|---|
+| KNN | 0.5974 | 0.6338 | 0.8615 | 0.9143 |
+| SVM | 0.7890 | 0.8036 | 0.9711 | 0.9691 |
 
-One of the most important characteristics of scRNA-seq data is its **sparsity**. In any given cell, roughly 96–97% of gene columns are zero. This is not a data quality problem — it is a biological reality. In a single cell at any given moment, most genes are simply silent. Only a small subset of genes are actively producing RNA. On average, each cell in this dataset has fewer than 100 genes with non-zero expression out of 2,358 total gene columns.
+### Per-class F1 (test set)
 
-This sparsity has direct consequences for machine learning. Many genes will have near-zero variance across all cells (because they are almost always zero), making them uninformative for classification. The Variance Threshold step in Notebook 2 removes these genes efficiently.
+The models are strong on well-represented, transcriptionally distinct types and weak on rare, closely-related tubule subtypes — biologically expected.
 
----
+| Cell Type | KNN F1 | SVM F1 | Test cells |
+|---|---|---|---|
+| T cells | 0.875 | **0.963** | 274 |
+| Endothelium | 0.773 | **0.940** | 189 |
+| Proximal Tubule | 0.774 | **0.890** | 1,979 |
+| Myeloid | 0.798 | **0.863** | 208 |
+| Collecting Duct Principal | 0.358 | **0.733** | 359 |
+| Ascending Thin Limb | 0.348 | **0.710** | 247 |
+| Thick Ascending Limb | 0.325 | **0.637** | 218 |
+| Collecting Duct Intercalated | 0.444 | **0.580** | 234 |
+| Loop of Henle & Parietal Epithelium | 0.167 | **0.429** | 147 |
+| Distal Convoluted Tubule | 0.262 | **0.379** | 145 |
 
-## The Five Studies
+### Feature reduction
 
-The dataset merges cells from five independent human kidney studies:
-
-| Study | Cells | Notes |
-|---|---|---|
-| Menon | 22,264 | Largest contributor — healthy donor kidneys |
-| Liao | 14,880 | Includes immune cell populations |
-| Lake | 13,255 | Broad cell type coverage across cortex and medulla |
-| Young | 6,067 | Includes rare immune cell types |
-| Wu | 4,259 | Diabetic kidney disease study; used abbreviated cell type labels |
-
-Each study was conducted independently, using different laboratory protocols, different sequencing depths, and different cell type naming conventions. This creates two key challenges:
-
-1. **Batch effects** — systematic differences between studies caused by the lab conditions rather than biology. Cells from the same type but different studies may look slightly different in the data.
-2. **Label inconsistency** — the Wu study used abbreviated cell type names while the others used full descriptive names for the same cell types.
-
-### About the Wu Study
-
-Wu et al. profiled kidney cells from patients with **diabetic kidney disease** alongside healthy donor kidneys. Diabetic kidney disease is one of the leading causes of kidney failure worldwide, and understanding which cell types are most affected — and how their gene expression changes — is critical for developing treatments. Their study used short abbreviations in the cell type annotations (e.g. `PT` for proximal tubule cells), which was the convention in their original publication.
-
----
-
-## Label Harmonisation
-
-Because the Wu study used different names for the same cell types, the labels must be standardised before training. Without this step, a machine learning model would treat `PT` (Wu's label for proximal tubule cells) and `Proximal Tubule` (everyone else's label) as two completely different classes — which would be biologically incorrect and would corrupt the training process.
-
-The following six mappings are applied in Notebook 1:
-
-| Wu Label | Standardised Label |
+| Stage | Genes remaining |
 |---|---|
-| `PT` | `Proximal Tubule` |
-| `DT` | `Distal Convoluted Tubule` |
-| `LH` | `Loop of Henle and Parietal Epithelium` |
-| `PC` | `Collecting Duct Principal` |
-| `IC` | `Collecting Duct Intercalated` |
-| `P` | `Glomerular Epithelium and Podocytes` |
-
-After harmonisation, the number of unique cell type labels is reduced from **31 to 25**.
+| Original gene columns | 2,358 |
+| After zero-variance removal | 2,350 |
+| After high-null removal (>90%) | 2,350 |
+| After VarianceThreshold (0.01) | 2,350 |
+| **After RFE (best k=293)** | **293** |
 
 ---
 
-## Cell Types in This Dataset
+## Architecture
 
-After harmonisation and removal of rare classes (see below), the dataset contains **22 kidney cell types**. These span the major functional regions of the kidney:
+Four notebooks run in sequence, each writing artefacts the next one reads. This staged design keeps every step independently inspectable and makes the KNN-vs-SVM comparison strictly fair (both models consume the identical train/test split and feature set).
 
-**Tubular cells** (handle filtration and reabsorption along the nephron):
-- Proximal Tubule — the most abundant cell type in the dataset (~37% of all cells); responsible for reabsorbing the majority of filtered nutrients
-- Distal Convoluted Tubule
-- Ascending Thin Limb
-- Descending Thin Limb
-- Thick Ascending Limb
-- Loop of Henle and Parietal Epithelium
-- Connecting Tubule
+```mermaid
+flowchart TD
+    RAW["Tisch24_MergedscRNA CSV<br/>60,725 cells × 2,358 genes"] --> NB1
 
-**Collecting duct cells** (responsible for final urine concentration):
-- Collecting Duct Principal
-- Collecting Duct Intercalated
+    NB1["<b>01_eda_loading</b><br/>harmonise labels · drop rare classes · EDA"]
+    NB1 -->|"kidney_cells_top_classes.csv"| NB2
 
-**Vascular cells** (form the blood vessels running through the kidney):
-- Endothelium
-- Glomerular Endothelium
-- Ascending Vasa Recta
-- Descending Vasa Recta
+    NB2["<b>02_preprocessing</b><br/>stratified subsample (20k) · train/test split<br/>feature selection: RFE → 293 genes"]
+    NB2 -->|"X_train / X_test / y_train / y_test"| NB3
+    NB2 -->|"same 4 files"| NB4
 
-**Glomerular cells** (involved in blood filtration at the start of the nephron):
-- Glomerular Epithelium and Podocytes
-- Mesangium and Vascular Smooth Muscle and Pericytes
+    NB3["<b>03_knn</b><br/>KNN · RandomizedSearchCV<br/>SMOTE+undersample inside CV folds"]
+    NB3 -->|"knn_best_params.json"| NB4
 
-**Immune cells** (resident immune population):
-- T cells
-- Myeloid cells
-- Natural Killer cells
-- Natural Killer and T cells
-- B cells
+    NB4["<b>04_svm</b><br/>SVM · BayesSearchCV<br/>SMOTE+undersample inside CV folds<br/>KNN vs SVM comparison"]
+```
 
-**Stromal cells:**
-- Fibroblasts
+**Where the correctness lives.** Notebook 2 fits *every* preprocessing step (zero-variance removal, StandardScaler, VarianceThreshold, RFE ranking) on the **training split only** and applies it to the test split — never the reverse. It deliberately does **not** balance the classes; instead, Notebooks 3 and 4 wrap `RandomUnderSampler` + `SMOTE` in an `imblearn.Pipeline` so balancing is re-fit on the training portion of **each cross-validation fold**. The test set is never resampled and reflects the real, imbalanced class distribution.
 
-**Other:**
-- Urothelium (lining the urinary tract)
+---
 
-### Rare Classes Removed
+## Skills Demonstrated
 
-Three cell types were removed from the dataset before training because they had fewer than 100 cells each. Machine learning models cannot reliably learn patterns from such a small number of examples, and these classes would also cause problems during stratified train/test splitting.
+- **Data engineering / ETL pipeline design** — a staged pipeline that moves raw 292 MB scRNA-seq data through cleaning, label harmonisation across five heterogeneous studies, and feature selection into a model-ready form, with artefacts passed between stages.
+- **Rigorous ML evaluation & data-leakage prevention** — fit-on-train-only preprocessing and per-fold resampling inside `imblearn` pipelines; CV/test agreement used as the correctness check.
+- **Feature selection on high-dimensional data** — Recursive Feature Elimination with a fast SGD-trained linear-SVM ranker, reducing 2,358 sparse gene features to 293.
+- **Class-imbalance handling** — combined SMOTE oversampling + majority undersampling to a fixed per-class cap.
+- **Hyperparameter optimisation** — `RandomizedSearchCV` (KNN) and Bayesian optimisation via `BayesSearchCV` / scikit-optimize (SVM).
+- **Model evaluation & comparison** — weighted F1, ROC-AUC (one-vs-rest), per-class precision/recall, confusion matrices, ROC curves, and a fair head-to-head model comparison.
+- **System design & communication** — documented design decisions and trade-offs; every step explained for a learning audience.
 
-| Removed Class | Cell Count |
+---
+
+## Tech Stack
+
+Pure-Python, CPU-only, reproducible from `requirements.txt` — no GPU, cloud account, or notebook-hosting service required.
+
+| Library | Role |
 |---|---|
-| Plasmacytoid | 19 |
-| Mast | 22 |
-| Neutrophil | 83 |
+| `pandas`, `numpy` | Data loading and manipulation |
+| `scikit-learn` | KNN, SVM, preprocessing, feature selection, metrics, CV search |
+| `imbalanced-learn` | `SMOTE` + `RandomUnderSampler` inside CV pipelines |
+| `scikit-optimize` | `BayesSearchCV` (Bayesian hyperparameter search for the SVM) |
+| `scipy` | Sampling distributions for randomised search |
+| `matplotlib`, `seaborn` | EDA plots, confusion matrices, ROC curves |
 
-After removal, the final working dataset contains **22 classes**.
+Exact pinned versions are in [`requirements.txt`](requirements.txt).
 
-### Class Imbalance
+---
 
-The dataset is significantly imbalanced. Proximal Tubule cells make up approximately 37% of all cells, while the smallest retained classes have only a few hundred cells. This imbalance is handled differently in each model notebook:
+## Getting Started
 
-- **KNN (Notebook 3):** Uses `weights='distance'`, which gives closer neighbours more influence and partially compensates for the majority class outnumbering minority class cells among a cell's nearest neighbours.
-- **SVM (Notebook 4):** Uses `class_weight='balanced'`, which automatically assigns higher penalty to misclassifying cells from smaller classes.
+**Prerequisites:** Python 3.10+ and the dataset file `Tisch24_MergedscRNA_80-85PctVAR.csv` (292 MB) placed in the repo folder. (The CSV is git-ignored due to size.)
+
+```bash
+# 1. Clone and enter the repo
+git clone https://github.com/shiva-shivanibokka/Tisch-ML-Model.git
+cd Tisch-ML-Model
+
+# 2. (Recommended) create a virtual environment
+python -m venv .venv
+source .venv/bin/activate        # Windows: .venv\Scripts\activate
+
+# 3. Install dependencies
+pip install -r requirements.txt
+
+# 4. Put the dataset CSV in this folder, then launch Jupyter
+jupyter lab
+```
+
+Run the notebooks **in order** — `01` → `02` → `03` → `04`. Each writes intermediate CSVs (git-ignored) that the next reads. By default `data_dir = Path('.')` (the repo folder); on Google Colab instead, mount Drive and point `data_dir` at your Drive folder (a commented snippet is included in each notebook's setup cell).
+
+To run headlessly:
+
+```bash
+jupyter nbconvert --to notebook --execute --inplace 01_eda_loading.ipynb
+jupyter nbconvert --to notebook --execute --inplace 02_preprocessing.ipynb
+jupyter nbconvert --to notebook --execute --inplace 03_knn.ipynb
+jupyter nbconvert --to notebook --execute --inplace 04_svm.ipynb
+```
+
+> The SVM notebook is the slow step (RBF-SVM cost grows quickly with training size); balancing is capped at `CAP = 1000` cells/class to keep it tractable on CPU.
 
 ---
 
@@ -187,448 +195,114 @@ The dataset is significantly imbalanced. Proximal Tubule cells make up approxima
 
 ```
 Tisch-ML-Model/
-│
-├── Tisch24_MergedscRNA_80-85PctVAR.csv   ← raw dataset (292 MB)
-│
-├── 01_eda_loading.ipynb                  ← data loading, cleaning, EDA
-├── 02_preprocessing.ipynb                ← feature selection, train/test split
-├── 03_knn.ipynb                          ← K-Nearest Neighbours classifier
-└── 04_svm.ipynb                          ← Support Vector Machine + comparison
+├── 01_eda_loading.ipynb        # Load, harmonise labels, drop rare classes, EDA, save cleaned data
+├── 02_preprocessing.ipynb      # Subsample, train/test split, leakage-safe feature reduction → 293 genes
+├── 03_knn.ipynb                # KNN + RandomizedSearchCV, saves best params
+├── 04_svm.ipynb                # SVM + BayesSearchCV, KNN-vs-SVM comparison
+├── requirements.txt            # Pinned dependencies
+├── LICENSE                     # MIT
+├── .gitignore                  # Excludes the 292 MB dataset + generated intermediate files
+└── README.md
 ```
 
-The notebooks must be run **in order**. Each notebook saves its outputs to Google Drive, and the next notebook reads them as inputs.
-
-```
-01_eda_loading.ipynb
-    └── saves: kidney_cells_clean.csv
-                kidney_cells_top_classes.csv
-
-02_preprocessing.ipynb
-    └── reads: kidney_cells_clean.csv  (or  kidney_cells_top_classes.csv)
-    └── saves: X_train.csv
-                X_test.csv
-                y_train.csv
-                y_test.csv
-
-03_knn.ipynb
-    └── reads: X_train.csv, X_test.csv, y_train.csv, y_test.csv
-
-04_svm.ipynb
-    └── reads: X_train.csv, X_test.csv, y_train.csv, y_test.csv
-```
+Generated at runtime (git-ignored): `kidney_cells_clean.csv`, `kidney_cells_top_classes.csv`, `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`, `knn_best_params.json`.
 
 ---
 
-## How to Run
+## The Dataset
 
-### Requirements
+**File:** `Tisch24_MergedscRNA_80-85PctVAR.csv` · **Size:** 292 MB · **Rows:** 60,725 (one per cell) · **Columns:** 2,367 (9 metadata + 2,358 gene expression).
 
-- A Google account with Google Drive
-- Google Colab (free, runs in your browser — no local installation needed)
-- The dataset file `Tisch24_MergedscRNA_80-85PctVAR.csv` uploaded to a folder on your Google Drive
+The name refers to the TISCH2 database (Tumor Immune Single-cell Hub, 2024). "80–85% VAR" means it was pre-filtered to the genes explaining 80–85% of total variance across cells, keeping the file manageable while retaining the most informative genes.
 
-### Setup Steps
+**Metadata columns:** `Cell_ID`, `nCount_RNA`, `nFeature_RNA`, `StudyOrigin_Author`, `percent.mt`, `Sex`, `Sampling_Location`, `Age`, and `Cell_Labels` (the target).
 
-1. Create a folder on your Google Drive, for example: `My Drive/kidney_scrna_data/`
-2. Upload `Tisch24_MergedscRNA_80-85PctVAR.csv` into that folder
-3. Open each notebook in Google Colab (File → Open notebook → Google Drive, or upload from GitHub)
-4. In **each notebook**, find the configuration cell at the top and update `data_dir` to match your folder path:
-
-```python
-data_dir = Path('/content/drive/MyDrive/kidney_scrna_data')
-```
-
-5. Run the notebooks in order: `01` → `02` → `03` → `04`
-
-### Choosing Between Full Dataset and Top Classes
-
-In **Notebook 2**, there is a toggle at the top of the configuration cell:
-
-```python
-# Options:
-#   'kidney_cells_clean.csv'       — all 22 classes
-#   'kidney_cells_top_classes.csv' — top 10 prominent classes only
-INPUT_FILE = 'kidney_cells_clean.csv'
-```
-
-- Use `kidney_cells_clean.csv` to classify all 22 cell types
-- Use `kidney_cells_top_classes.csv` to focus only on the 10 most well-represented cell types — this gives higher overall accuracy and trains faster, and is a good starting point if you want to understand the models before tackling the full 22-class problem
-
-Both output files are created by Notebook 1.
+**Sparsity.** ~96–97% of gene values in any given cell are zero — a biological reality (most genes are silent at any moment), not a data-quality issue. On average a cell has fewer than 100 non-zero genes out of 2,358. This is why variance-based filtering and feature selection matter.
 
 ---
 
-## Notebook 1 — EDA and Loading
+## The Five Studies & Label Harmonisation
 
-**File:** `01_eda_loading.ipynb`  
-**Input:** `Tisch24_MergedscRNA_80-85PctVAR.csv`  
-**Outputs:** `kidney_cells_clean.csv`, `kidney_cells_top_classes.csv`
+The dataset merges five independent human-kidney studies, each with different protocols and naming conventions:
 
-This notebook handles all data loading, cleaning, and exploratory analysis. No machine learning happens here — the goal is to understand what is in the data before doing anything with it.
-
-### What it does, step by step
-
-**Step 1 — Load the raw dataset**  
-Reads the 292 MB CSV file. Prints the number of rows (cells), columns, and gene columns.
-
-**Step 2 — Inspect the data**  
-Prints the data type of each metadata column, reports which columns have missing values and what percentage is missing, and shows how many unique values are in each column. Then prints every raw cell type label with its cell count and percentage of the total.
-
-**Step 3 — Label harmonisation**  
-Applies the 6 Wu label mappings described above, reducing from 31 unique labels to 25.
-
-**Step 4 — Remove rare cell types**  
-Removes cells belonging to any class with fewer than 100 cells. Prints which classes were removed and the final cell and class counts.
-
-**Step 5 — EDA plots**  
-Produces the following visualisations:
-
-| Plot | What it shows |
-|---|---|
-| Cell Type Distribution | Horizontal bar chart of all 22 cell types with cell counts and percentages |
-| Cell Type Proportions | Pie chart showing the top 8 cell types and an "Other" slice |
-| Missing Values | Bar chart of missing percentage per metadata column, with reference lines at 20% and 50% |
-| Top 10 Cell Types by Count | Bar chart focusing on the 10 most abundant classes |
-| Top 10 vs Remaining Classes | Pie chart comparing the prominent classes to the rest |
-| Genes Detected per Cell | Histogram of `nFeature_RNA` with median and mean reference lines |
-| Median Genes by Cell Type | Bar chart showing median gene detection count for each cell type |
-| Gene Expression Sparsity per Cell | Histogram showing what fraction of each cell's gene columns are zero |
-| Median Sparsity by Cell Type | Bar chart showing how sparse each cell type tends to be |
-
-**Step 6 — Save outputs**  
-Saves `kidney_cells_clean.csv` (all 22 classes) and `kidney_cells_top_classes.csv` (top 10 only).
-
----
-
-## Notebook 2 — Preprocessing and Feature Selection
-
-**File:** `02_preprocessing.ipynb`  
-**Input:** `kidney_cells_clean.csv` or `kidney_cells_top_classes.csv`  
-**Outputs:** `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`
-
-This notebook prepares the data for machine learning. It takes the cleaned dataset, reduces the 2,358 gene features down to a smaller informative subset, and splits the data into training and test sets.
-
-### Data Leakage
-
-A key principle throughout this notebook is **preventing data leakage**. Data leakage happens when information from the test set is used during preprocessing or training. For example, if you calculate the mean and standard deviation of the full dataset (including the test set) and use those values to scale the data, the model has indirectly "seen" the test set before evaluation. This produces unrealistically optimistic results.
-
-To prevent this, every preprocessing step in this notebook is **fitted on the training set only** and then **applied** to both the training and test sets. The test set remains completely untouched until the final evaluation in Notebooks 3 and 4.
-
-### What it does, step by step
-
-**Step 1 — Separate features and target**  
-Creates `X` (the 2,358 gene expression columns) and `y` (the `Cell_Labels` column). Metadata columns like age, sex, and study origin are excluded because cell type is determined by gene expression, not patient demographics.
-
-**Step 2 — Stratified sample of 10,000 cells**  
-The full ~60,000-cell dataset is too large to run Recursive Feature Elimination (RFE) on in a reasonable time. A sample of 10,000 cells is taken using **stratified sampling**, which preserves the class proportions from the full dataset. For example, if Proximal Tubule makes up 37% of the full dataset, it will also make up approximately 37% of the 10,000-cell sample.
-
-Two sampling methods are shown side by side:
-- **Method A** — a custom function that calculates the proportional sample size for each class explicitly
-- **Method B** — the same result using sklearn's `train_test_split` with `test_size=10000` and `stratify=y`
-
-Both methods produce the same outcome. Method A is shown first because it makes the proportional logic explicit.
-
-**Step 3 — Train/test split**  
-The 10,000-cell sample is split 80% training / 20% test using `train_test_split` with `stratify=y_sub` to maintain class proportions in both sets, and `random_state=42` to make the split reproducible.
-
-**Step 4 — Feature reduction pipeline**
-
-The 2,358 gene features are reduced in four steps:
-
-| Step | Method | Threshold / Setting |
+| Study | Cells | Notes |
 |---|---|---|
-| 1 | Zero-variance removal | Exact variance = 0 |
-| 2 | High-null removal | > 90% missing values |
-| 3 | StandardScaler | mean = 0, std = 1 |
-| 4 | VarianceThreshold | threshold = 0.01 |
-| 5 | RFE | best k found by sweep |
+| Menon | 22,264 | Largest contributor — healthy donor kidneys |
+| Liao | 14,880 | Includes immune populations |
+| Lake | 13,255 | Broad coverage across cortex and medulla |
+| Young | 6,067 | Includes rare immune types |
+| Wu | 4,259 | Diabetic kidney disease; abbreviated cell-type labels |
 
-**Zero-variance removal:** Any gene that has the exact same value in every single training cell is removed. It carries no information whatsoever.
+The Wu study abbreviated cell types (e.g. `PT` for proximal tubule). Without harmonisation, a model would treat `PT` and `Proximal Tubule` as different classes. Notebook 1 applies six mappings (`PT`→Proximal Tubule, `DT`→Distal Convoluted Tubule, `LH`→Loop of Henle and Parietal Epithelium, `PC`→Collecting Duct Principal, `IC`→Collecting Duct Intercalated, `P`→Glomerular Epithelium and Podocytes), reducing 31 raw labels to 25.
 
-**StandardScaler:** Rescales each gene's values so they have a mean of 0 and a standard deviation of 1 across all training cells. This ensures that genes with naturally high count values do not dominate the variance calculation in the next step.
-
-**VarianceThreshold:** Even after scaling, genes that are near-zero in most cells will still have very low variance. `VarianceThreshold(threshold=0.01)` removes any gene whose variance across all training cells falls below 0.01. The method `get_support()` returns a True/False array (True = keep, False = remove), and this mask is applied identically to both training and test sets.
-
-**RFE (Recursive Feature Elimination):** RFE ranks genes by how useful they are for classification and removes the least useful ones, repeating the process until a target number of features (`k`) is reached. To find the best `k`, a sweep is run over candidate values generated by starting at `N // 4` (one quarter of the features remaining after VarianceThreshold) and halving each time. For each `k`, a lightweight Random Forest is used to select the features and a slightly larger Random Forest is used to evaluate them. The result is plotted as a line chart of weighted F1 score vs number of features, with the best `k` marked by a red dashed vertical line. The final RFE is then re-run with the best `k`.
-
-**Why is a Random Forest used inside RFE if the final models are KNN and SVM?**  
-RFE needs a model that can rank features by importance. KNN computes distances rather than importance scores, so it cannot be placed inside RFE. SVM with an RBF kernel also does not produce feature importance scores in a form that RFE can use directly. A lightweight Random Forest is used purely as a feature ranker inside RFE — it is fast and produces reliable gene importance scores. The genes selected by this process are then passed to KNN and SVM for the actual classification. This is standard practice in applied machine learning.
-
-**Step 5 — Save outputs**  
-Saves all four files: `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`.
+**Rare classes removed** (fewer than 100 cells — too few to learn or to split reliably): Plasmacytoid (19), Mast (22), Neutrophil (83). This leaves **22 classes / 60,601 cells**. The modelling notebooks focus on the **top-10 most abundant classes** (50,218 cells) so the pipeline runs quickly and the minority classes still have enough examples to evaluate.
 
 ---
 
-## Notebook 3 — K-Nearest Neighbours
+## Pipeline in Detail
 
-**File:** `03_knn.ipynb`  
-**Input:** `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`
+### Notebook 1 — EDA & Loading
+Loads the raw CSV, harmonises labels, removes rare classes, and produces EDA visualisations (class distribution, missing-value profile, genes-per-cell, sparsity per cell and per cell type). Saves `kidney_cells_clean.csv` (22 classes) and `kidney_cells_top_classes.csv` (top 10).
 
-### How KNN works
+### Notebook 2 — Preprocessing & Feature Selection
+**Preventing data leakage** is the guiding principle: every step is fit on the training split and applied to the test split.
 
-K-Nearest Neighbours is one of the most intuitive machine learning algorithms. It does not learn a model in the traditional sense — it simply stores the entire training set. To classify a new cell, it:
+1. **Stratified subsample** of 20,000 cells (preserving class proportions) → 80/20 split into 16,000 train / 4,000 test.
+2. **Zero-variance removal**, **high-null removal (>90%)**, **StandardScaler**, **VarianceThreshold(0.01)** — each fit on train only.
+3. **Recursive Feature Elimination.** RFE needs an estimator that ranks features by importance (KNN and RBF-SVM don't expose this), so a **linear SVM trained with SGD** serves purely as the ranker. Genes are ranked once, then a sweep over `k` (scored by 3-fold CV weighted F1 on the training set) selects **k = 293**.
+4. Saves the **un-resampled** `X_train/X_test/y_train/y_test` — balancing is deferred to the model notebooks to avoid leakage.
 
-1. Calculates the distance between the new cell and every cell in the training set, using the gene expression values as coordinates in a high-dimensional space
-2. Finds the `k` closest training cells (the nearest neighbours)
-3. Looks at what cell type those `k` neighbours are labelled as
-4. Assigns the class that appears most frequently among them
+### Notebook 3 — K-Nearest Neighbours
+KNN classifies a cell by the majority vote of its nearest neighbours in gene-expression space (cells of the same type cluster together). Tuned with **`RandomizedSearchCV`** (20 samples × 5-fold): `n_neighbors` 1–30, `weights` ∈ {uniform, distance}, `metric` ∈ {euclidean, manhattan, chebyshev}. Best: **k=24, manhattan, distance**. Saves `knn_best_params.json`. Outputs a classification report, confusion matrix, one-vs-rest ROC curves, and per-class F1.
 
-The idea behind using KNN for gene expression data is that cells of the same type tend to express the same genes at similar levels. In other words, they cluster together in the gene expression space. KNN exploits this directly.
+### Notebook 4 — Support Vector Machine & Comparison
+An RBF-SVM finds a maximum-margin decision boundary in a higher-dimensional space. Tuned with **Bayesian optimisation** (`BayesSearchCV`, 15 trials × 3-fold), which uses past trials to pick promising `C`/`gamma` values rather than sampling blindly: `C` log-uniform 0.01–100, `gamma` log-uniform 1e-4–1e-1 (capped at 0.1 to avoid the slow, over-fitting high-gamma region). Best: **C≈17.8, γ≈3.3e-4**. Reloads the KNN params and re-runs KNN under identical per-fold balancing for a fair head-to-head comparison.
 
-**`weights='distance'`:** By default, all `k` neighbours get an equal vote. With `weights='distance'`, closer neighbours have more influence than distant ones. A cell at distance 0.1 has more voting power than one at distance 2.0. This helps with the class imbalance in this dataset — without distance weighting, the majority class cells can outnumber minority class cells among the neighbours and dominate the vote.
-
-### Hyperparameter tuning — RandomizedSearchCV
-
-The Sepsis project (a companion project in this series) used `GridSearchCV`, which tests every possible combination of hyperparameter values. Here we use **RandomizedSearchCV**, which randomly samples a fixed number of combinations from the search space.
-
-For KNN, this is the better choice because it allows us to search a much wider range for `n_neighbors` (any integer from 1 to 30, rather than just a few hand-picked values) without having to test every single one. With `n_iter=20`, we test 20 randomly drawn combinations — far fewer than a full grid, but usually enough to find a good configuration.
-
-**Search space:**
-
-| Hyperparameter | Range | Description |
-|---|---|---|
-| `n_neighbors` | 1 to 30 (integers) | How many nearest neighbours vote on the class — smaller k follows the data more closely, larger k gives smoother boundaries |
-| `weights` | 'uniform', 'distance' | Whether all neighbours vote equally or closer ones count more |
-| `metric` | 'euclidean', 'manhattan', 'chebyshev' | How distance between cells is calculated |
-
-**Total fits:** 20 combinations × 5 cross-validation folds = 100 model fits
-
-### Evaluation
-
-After tuning, the best model is evaluated on the held-out test set. The following outputs are produced:
-
-- **Classification report:** Precision, recall, F1 score, and support for every class individually, plus weighted averages
-- **Confusion matrix:** A grid showing how many cells of each true type were predicted as each type — diagonal cells are correct predictions, off-diagonal cells are misclassifications
-- **ROC curves (one-vs-rest):** For each of the top 10 most frequent classes, a curve showing the trade-off between true positive rate and false positive rate. AUC (Area Under the Curve) close to 1.0 means the model distinguishes that class well from all others
-- **Per-class F1 bar chart:** A horizontal bar chart showing the F1 score for each class individually, sorted from lowest to highest, with a line showing the mean F1 score across all classes — this immediately reveals which cell types the model finds hardest to classify
-
----
-
-## Notebook 4 — Support Vector Machine and Model Comparison
-
-**File:** `04_svm.ipynb`  
-**Input:** `X_train.csv`, `X_test.csv`, `y_train.csv`, `y_test.csv`
-
-### How SVM works
-
-A Support Vector Machine finds the decision boundary — called a **hyperplane** — that best separates the classes from each other. Unlike KNN which uses all training cells, SVM focuses specifically on the training cells that sit closest to the decision boundary. These are the **support vectors**, and the key idea is to find the boundary that maximises the gap (margin) between the nearest cells of each class.
-
-For multiclass problems, sklearn's SVC uses a **one-vs-one (OvO)** strategy: it trains a separate binary classifier for every pair of classes (e.g. Proximal Tubule vs T cells, Proximal Tubule vs Endothelium, T cells vs Endothelium, and so on), then combines all their votes to make the final prediction.
-
-**`kernel` parameter:** The kernel determines the shape of the decision boundary.
-- `'rbf'` (Radial Basis Function) — maps the data into a higher-dimensional space where a linear boundary can separate classes that were not linearly separable in the original space. Generally the most powerful option for complex data.
-- `'linear'` — finds a straight-line (or hyperplane) boundary. This actually works very well for high-dimensional data like gene expression, where the large number of features already gives the model a lot of flexibility even with a linear boundary.
-
-**`class_weight='balanced'`:** Automatically adjusts the penalty for misclassifying each class based on how frequent it is. Cells from rare classes receive a higher penalty when misclassified, so the model cannot ignore them in favour of the dominant Proximal Tubule class.
-
-**`probability=True`:** Enables `predict_proba()`, which is needed to plot ROC curves. SVM does not naturally produce probabilities — enabling this setting applies an additional step called Platt scaling, which takes the SVM's raw scores and converts them to probabilities. This adds a small amount of training time.
-
-### Hyperparameter tuning — Bayesian Optimisation
-
-While Notebook 3 used `RandomizedSearchCV` (random sampling), Notebook 4 uses **Bayesian Optimisation** via `BayesSearchCV` from the `scikit-optimize` library.
-
-The fundamental difference is that RandomizedSearchCV has no memory — each trial is sampled independently, with no information from previous trials. Bayesian optimisation is smarter:
-
-1. It runs a few initial random trials to gather early information about the search space
-2. It builds a **surrogate model** — a probabilistic model that estimates how the score is likely to vary across the search space based on the results so far
-3. It uses the surrogate model to decide which combination to try next, focusing on regions of the search space that look promising
-4. After each new trial, it updates the surrogate model and repeats
-
-This is particularly valuable for SVM because `C` and `gamma` are **continuous parameters** — they can take any positive value, and good values typically span several orders of magnitude (e.g. 0.01, 0.1, 1.0, 10, 100). Bayesian search navigates this continuous space intelligently, while random search just samples blindly.
-
-**Search space:**
-
-| Hyperparameter | Range | Scale | Description |
-|---|---|---|---|
-| `C` | 0.01 – 100.0 | Log-uniform | Regularisation strength — higher C = the model tries harder to correctly classify every training cell, at the risk of overfitting |
-| `kernel` | 'rbf', 'linear' | Categorical | Type of decision boundary |
-| `gamma` | 0.0001 – 1.0 | Log-uniform | RBF kernel only — how far the influence of each training cell reaches; small gamma = broad influence, large gamma = narrow influence |
-
-Log-uniform means values are sampled evenly on a log scale, so 0.01, 0.1, 1.0, and 10.0 are all equally likely to be tried. This is the appropriate prior when good values can span several orders of magnitude.
-
-**Total fits:** 20 Bayesian trials × 5 cross-validation folds = 100 model fits
-
-**Installation:** `scikit-optimize` is not pre-installed in Google Colab. A pip install cell at the start of the tuning section handles this automatically.
-
-### Evaluation
-
-The same evaluation suite as Notebook 3 is produced:
-- Classification report
-- Confusion matrix (orange colour scheme)
-- ROC curves (one-vs-rest, top 10 classes)
-- Per-class F1 bar chart
-
-### Model Comparison — KNN vs SVM
-
-The final section of Notebook 4 compares both models side by side. KNN is re-run using the best hyperparameters found in Notebook 3 (which you paste in manually), and then four metrics are compared:
-
-| Metric | What it measures |
-|---|---|
-| Weighted F1 | Harmonic mean of precision and recall, averaged across all classes weighted by class size — the primary metric |
-| ROC-AUC | Area under the ROC curve (weighted one-vs-rest) — measures overall discriminative ability |
-| Precision | Of all cells the model predicted as a given type, how many actually were that type |
-| Recall | Of all cells that actually were a given type, how many did the model correctly identify |
-
-The comparison is shown in:
-1. A printed table with all four metrics for both models
-2. A grouped bar chart with blue bars for KNN and orange bars for SVM
-3. Overlaid ROC curves for the largest class only (Proximal Tubule), showing both models on the same plot for a direct head-to-head comparison
+In **both** model notebooks, class balancing is an `imblearn.Pipeline` step (`RandomUnderSampler` down to `CAP=1000`/class, then `SMOTE` up to `CAP`), so it is re-fit inside every CV fold and the final model — never on the test set.
 
 ---
 
 ## Key Design Decisions
 
-### Why these two models?
-
-**KNN** was chosen because it is intuitive (the concept of finding nearest neighbours in gene expression space maps directly to the biology), it requires no assumptions about the data distribution, and it contrasts clearly with SVM. It also connects naturally to the idea of cells of the same type clustering together.
-
-**SVM** was chosen because it is genuinely powerful for high-dimensional data. With hundreds of gene features after RFE, SVM's ability to find complex decision boundaries in high-dimensional space makes it well-suited to this problem. It also introduces students to Bayesian hyperparameter search, which is more sophisticated than the random search used for KNN.
-
-### Why not use the full 60,000 cells?
-
-RFE trains and evaluates a model many times internally — once for each candidate `k` value, and once inside each cross-validation fold. With 60,000 training cells this would take many hours on Google Colab. The stratified 10,000-cell sample preserves the class proportions, meaning the model still sees the same relative balance of cell types — just less of each.
-
-### Why weighted F1 and not accuracy?
-
-The dataset is heavily imbalanced. Proximal Tubule cells make up 37% of the data. A model that always predicted "Proximal Tubule" would achieve 37% accuracy without learning anything meaningful. Weighted F1 score accounts for this by averaging F1 scores across all classes, weighted by class size, so the model is judged on how well it performs across all cell types.
-
-### Why is the same train/test split used for both models?
-
-Using the same `X_train.csv`, `X_test.csv`, `y_train.csv`, and `y_test.csv` files for both Notebook 3 and Notebook 4 ensures that the comparison between KNN and SVM is fair. Both models see exactly the same training data and are evaluated on exactly the same test data.
+- **Why SMOTE inside the CV pipeline, not before?** Oversampling before the train/validation split lets synthetic points derived from a validation cell leak into training, inflating CV scores. Wrapping resampling in an `imblearn.Pipeline` confines it to each fold's training portion. This single change is the core correctness property of the project.
+- **Why a linear SVM as the RFE ranker when the models are KNN/SVM?** RFE needs importance scores; KNN has none and RBF-SVM's aren't usable by RFE. A fast SGD-trained linear SVM ranks genes cheaply, and the selected genes are handed to the actual classifiers — standard practice.
+- **Why weighted F1, not accuracy?** The data is heavily imbalanced (Proximal Tubule ≈ 50% of the top-10 subset). A "always predict Proximal Tubule" model would score ~50% accuracy while learning nothing; weighted F1 rewards performance across all classes.
+- **Why subsample and cap balancing?** RBF-SVM training cost grows ~quadratically with rows. A 20,000-cell stratified subsample and a per-class balancing cap keep the full pipeline runnable on a CPU in minutes while preserving class proportions and honest evaluation.
+- **Why the same train/test split for both models?** Reading identical `X_train/X_test/y_train/y_test` files guarantees the KNN-vs-SVM comparison is fair.
 
 ---
 
-## Libraries Used
+## Testing & Reproducibility
 
-| Library | Version | Purpose |
-|---|---|---|
-| `pandas` | any recent | Data loading, manipulation, and saving |
-| `numpy` | any recent | Numerical operations and array handling |
-| `matplotlib` | any recent | All plots and visualisations |
-| `seaborn` | any recent | Plot styling |
-| `scikit-learn` | ≥ 1.0 | KNN, SVM, preprocessing, feature selection, metrics |
-| `scipy` | any recent | `randint` distribution for RandomizedSearchCV |
-| `scikit-optimize` | ≥ 0.9 | `BayesSearchCV` for Bayesian hyperparameter search (Notebook 4 only) |
+There is **no unit-test suite** — this is an analysis pipeline, not a software library. Correctness is instead established by:
 
-All libraries except `scikit-optimize` are pre-installed in Google Colab. `scikit-optimize` is installed automatically by a cell in Notebook 4 at the start of the tuning section.
+- **Fixed seeds** (`random_state=42`) throughout, so runs are reproducible.
+- **Leakage checks by construction** — preprocessing fit on train only; resampling confined to CV folds.
+- **CV ≈ test agreement** as an empirical correctness signal (see [Results](#results)).
+- **Pinned dependencies** in `requirements.txt` for a reproducible environment.
 
 ---
 
-## Results Summary
+## Deployment
 
-These results were produced using `kidney_cells_top_classes.csv` (the top 10 most abundant cell types) as the input to Notebook 2.
-
-### Feature Reduction (Notebook 2)
-
-| Stage | Features Remaining |
-|---|---|
-| Original gene columns | 2,358 |
-| After zero-variance removal | 2,289 |
-| After high-null removal (>90%) | 2,289 |
-| After VarianceThreshold (0.01) | 2,289 |
-| After RFE (best k = 17) | 17 |
-
-**17 genes selected by RFE:** `ACVRL1`, `AFP`, `APOBEC3G`, `ATP2B1`, `ATP5A1`, `ATP5G3`, `AVPR2`, `AZGP1`, `BRD2`, `BTBD7`, `BTG3`, `CA2`, `CD96`, `CRYAB`, `CXCL14`, `CYBA`, `LINC02421`
-
-**RFE sweep results:**
-
-| k (features) | Weighted F1 |
-|---|---|
-| 572 | 0.3703 |
-| 286 | 0.3987 |
-| 143 | 0.4052 |
-| 71 | 0.4085 |
-| 35 | 0.4220 |
-| **17** | **0.4740** |
-| 8 | 0.4658 |
-| 4 | 0.4404 |
-| 2 | 0.3532 |
-| 1 | 0.3288 |
-
-### Model Performance (Notebooks 3 and 4)
-
-| Model | Weighted F1 | ROC-AUC | Precision | Recall |
-|---|---|---|---|---|
-| KNN (baseline, k=5) | 0.5674 | 0.7970 | — | — |
-| KNN (tuned, k=24, manhattan, distance) | 0.5787 | 0.8398 | 0.5676 | 0.6108 |
-| SVM (baseline, RBF) | 0.5216 | 0.8569 | — | — |
-| SVM (tuned, C=100, γ=0.024, RBF) | 0.5213 | 0.8641 | 0.6331 | 0.4747 |
-
-**KNN wins on Weighted F1 (0.5787 vs 0.5213). SVM wins on ROC-AUC (0.8641 vs 0.8398) and Precision (0.6331 vs 0.5676).**
-
-### Per-Class F1 — KNN (tuned)
-
-| Cell Type | F1 | Test cells |
-|---|---|---|
-| Distal Convoluted Tubule | 0.121 | 72 |
-| Loop of Henle and Parietal Epithelium | 0.130 | 73 |
-| Thick Ascending Limb | 0.165 | 109 |
-| Ascending Thin Limb | 0.223 | 124 |
-| Collecting Duct Intercalated | 0.278 | 117 |
-| Collecting Duct Principal | 0.367 | 179 |
-| Endothelium | 0.513 | 95 |
-| T cells | 0.627 | 137 |
-| Myeloid | 0.691 | 104 |
-| Proximal Tubule | highest | 989 |
-
-### Per-Class F1 — SVM (tuned)
-
-| Cell Type | F1 | Test cells |
-|---|---|---|
-| Distal Convoluted Tubule | 0.148 | 72 |
-| Ascending Thin Limb | 0.199 | 124 |
-| Loop of Henle and Parietal Epithelium | 0.237 | 73 |
-| Endothelium | 0.263 | 95 |
-| Collecting Duct Intercalated | 0.268 | 117 |
-| Thick Ascending Limb | 0.277 | 109 |
-| Collecting Duct Principal | 0.375 | 179 |
-| T cells | 0.606 | 137 |
-| Myeloid | 0.651 | 104 |
-| Proximal Tubule | highest | 989 |
+Not deployed, by design — this is a notebook-based analysis/portfolio project, not a service. It runs anywhere Python + the dependencies are installed; no server, container, or cloud account is involved.
 
 ---
 
-## Interpretation
+## Roadmap / Future Work
 
-These results are modest, and that is expected. This is an introductory project — the goal is to understand the end-to-end machine learning workflow applied to biological data, not to build a production cell type classifier.
-
-### What the numbers mean
-
-Both models achieve a weighted F1 around 0.52–0.58, which means they are doing better than random but are far from reliable classifiers across all 10 cell types. The ROC-AUC scores are more encouraging (~0.84 for KNN, ~0.86 for SVM), which tells us the models have genuine discriminative ability in a probabilistic sense — but that ability does not always translate into clean hard predictions at a fixed decision threshold.
-
-The per-class results tell a clearer story. Proximal Tubule — the most abundant class at nearly 50% of the data — gets classified well by both models. The rare cell types (Distal Convoluted Tubule: 72 cells, Loop of Henle: 73 cells) get F1 scores below 0.15. This is a direct consequence of imbalance. With so few examples of these types in the training set, the model simply does not see enough of them to learn reliable patterns.
-
-KNN and SVM make different trade-offs. KNN has higher recall (0.61) — it correctly identifies more cells overall, but makes more mistakes in the process. SVM has higher precision (0.63) — when it predicts a cell type, it is more often right, but it misses more cells (recall 0.47). Neither is clearly better; which matters more depends on the application.
-
-### Why the performance is limited
-
-Several factors contribute to the modest results:
-
-- **Small training set:** We sampled 10,000 cells from ~50,000 available. The rarest classes in the training set have only a few hundred examples.
-- **Aggressive feature reduction:** RFE selected only 17 genes from 2,358. This was necessary to keep the pipeline fast in Colab, but 17 genes is very few for distinguishing 10 biologically related cell types. Many informative genes were likely discarded.
-- **Class imbalance:** Proximal Tubule makes up ~50% of the training data in the top-10 subset. Both models are pulled toward predicting the dominant class.
-- **KNN and SVM are not the standard tools for scRNA-seq:** In research, dedicated tools like Seurat and scANVI are used, which are specifically designed for the sparsity and batch-effect properties of single-cell data. Standard ML models applied here are intentionally simplified.
-
-### Ways to improve the models
-
-This project keeps things simple on purpose. For students who want to go further:
-
-**Reduce the class imbalance**
-- Keep all 22 classes but run on the full 60,000-cell dataset. More data generally helps minority classes.
-- Use a larger value of k in RFE to keep more genes.
-
-**Better hyperparameter search**
-- Increase `n_iter` in RandomizedSearchCV (Notebook 3) and BayesSearchCV (Notebook 4) to explore more combinations. The current setting of 20 trials is minimal.
-
-**Better features**
-- Try using all 2,358 genes without RFE and see how a simple KNN or linear SVM performs. In high-dimensional gene expression space, more features are not always worse.
-- Use log-normalisation before scaling: applying `log(count + 1)` to gene expression counts is standard in scRNA-seq analysis and often improves model performance.
-
-**More representative sampling**
-- Deliberately oversample rare cell types in the 10,000-cell sample, rather than sampling proportionally. This gives the model more examples of hard-to-classify cell types.
-
-These improvements are not implemented here because the purpose of this project is to teach the fundamentals clearly, step by step. Each notebook is short enough to run and understand in one session.
+- Run on the full ~50k top-10 cells (or all 22 classes) rather than a 20k subsample, given more compute.
+- Add `log1p` normalisation before scaling (standard for scRNA-seq counts).
+- Try a linear-kernel SVM and regularised logistic regression as high-dimensional baselines.
+- Compare against purpose-built single-cell tools (Seurat label transfer, scANVI) to quantify the gap standard ML leaves on the table.
+- Package the shared preprocessing/resampling logic into an importable module and add unit tests around the leakage-safety guarantees.
 
 ---
 
-*This project is part of a series of applied machine learning projects designed for students. A companion project applying Random Forest and XGBoost to sepsis prediction is available in the Sepsis-ML-Model repository.*
+## License
+
+Released under the [MIT License](LICENSE).
+
+---
+
+*Part of a series of applied-ML learning projects. A companion project applying Random Forest and XGBoost to sepsis prediction lives in the Sepsis-ML-Model repository.*
