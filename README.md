@@ -258,7 +258,6 @@ Tisch-ML-Model/
 ├── fly.toml                    # Fly.io deployment config
 ├── pyproject.toml              # Package metadata (`pip install -e .`)
 ├── requirements.txt            # Pinned dependencies (CPU-only)
-├── docs/superpowers/           # Design spec + implementation plan
 ├── LICENSE                     # MIT
 ├── .gitignore                  # Excludes the 292 MB dataset + generated intermediate files
 └── README.md
