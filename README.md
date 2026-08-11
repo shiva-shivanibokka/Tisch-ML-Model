@@ -8,7 +8,7 @@ Classifying human kidney cell types from single-cell gene expression — a leaka
 
 ### 🔬 [Live demo → tisch-kidney-classifier.vercel.app](https://tisch-kidney-classifier.vercel.app/)
 
-Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature. *(Serverless on Vercel, ~200 ms per prediction, no cold-start wait.)*
+Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature, where hovering any stripe names the gene and gives its exact deviation from the training average. *(Serverless on Vercel, ~200 ms per prediction, no cold-start wait.)*
 
 ---
 
@@ -149,7 +149,12 @@ A **[FastAPI](https://tisch-kidney-classifier.vercel.app/) service** exposes it:
 | `/model` | GET | Metadata: model type, the 293 genes, 10 class labels, test metrics |
 | `/predict` | POST | `{features: {gene: value, …}}` → `{prediction, confidence, top3, model_type}` |
 
-The **demo page** (`/`) is a self-contained single-page UI: click a real held-out cell (one per cell type) or draw a random one, and the result renders inline right below the picker — the predicted cell type with a ✓/✗ against the true label, the **top-3** most likely types with probabilities, and the cell's **293-gene expression signature** (each gene z-scored against the training average; indigo = under-expressed, yellow = over-expressed). It also surfaces header stat tiles (Test F1 0.804, ROC-AUC 0.969, 293 genes, 10 cell types) and a per-class F1 panel. Every prediction is logged as a structured JSON line. The same app runs two ways: containerised (`Dockerfile`, ~120 MB, non-root, bakes in only the model + demo samples — the 292 MB dataset is never shipped) and **deployed live as a Vercel function** (`vercel.json`). See [Deployment](#deployment) for why the serverless build serves ONNX instead of scikit-learn.
+The **demo page** (`/`) is a self-contained single-page UI. Click one of the ten labelled cells — the first held-out sample of each type — or draw at random from all twenty, and the result renders inline: the predicted type with a ✓/✗ against the true label, the **top-3** most likely types with probabilities, and the cell's **293-gene expression signature**. Header stat tiles (Test F1 0.804, ROC-AUC 0.969, 293 genes, 10 cell types), a per-class F1 panel, and a hover explainer on every metric fill in the context. Every prediction is logged as a structured JSON line.
+
+Two details in that UI are load-bearing rather than decorative:
+
+- **Colour is cell-type identity.** Each of the ten types holds a fixed position on the [viridis](https://bids.github.io/colormap/) ramp and keeps it in the picker, the prediction, the top-3 bars and the per-class chart — the way a cluster keeps its colour across every panel of a single-cell figure. The per-class chart therefore doubles as the legend for the rest of the page.
+- **The signature strip is scaled for sparse data.** Each stripe is one gene, z-scored against the training average, on a diverging indigo → yellow ramp (the ends of viridis; blue–yellow stays legible under the common forms of colour blindness, which red–green does not). The scale is **square-root, not linear**: single-cell expression is zero-inflated, so in a given cell the median gene sits ~0.2 SD from the mean and only a handful clear ±1.4 — under a linear ramp almost every stripe lands on the neutral and the strip reads as blank paper. The strip also reports how many of the 293 genes actually deviate by more than 0.5 SD, which varies enormously by cell (3 for one proximal tubule cell, 70 for a collecting duct one) and is the honest reason a strip sometimes looks flat. Hovering a stripe names the gene and prints its exact z. The same app runs two ways: containerised (`Dockerfile`, ~120 MB, non-root, bakes in only the model + demo samples — the 292 MB dataset is never shipped) and **deployed live as a Vercel function** (`vercel.json`). See [Deployment](#deployment) for why the serverless build serves ONNX instead of scikit-learn.
 
 ```bash
 python train.py                              # train + export artifacts/ (~35 min CPU; --quick for a smoke test)
