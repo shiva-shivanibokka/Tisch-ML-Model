@@ -220,17 +220,25 @@ _LANDING_PAGE = """<!doctype html>
   body{margin:0;background:
       radial-gradient(1100px 480px at 50% -200px,#E6EDF1,var(--bg) 70%),var(--bg);
     color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
-  .wrap{margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 2in 4rem;}
+  /* container-type lets the headline size itself against the *column* (cqi)
+     rather than the viewport, so it fills the measure the gutters leave. */
+  .wrap{margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 2in 4rem;container-type:inline-size;}
   /* Below ~1000px a pair of 2in gutters would leave less page than margin, so
      they fall back to a proportional one. */
   @media(max-width:1000px){.wrap{padding-left:5vw;padding-right:5vw;}}
   @media(max-width:520px){.wrap{padding-left:1.15rem;padding-right:1.15rem;}}
   .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.28em;
     text-transform:uppercase;color:var(--accent);margin:0 0 1rem;}
-  h1{font-size:clamp(2rem,5.4vw,3.1rem);font-weight:600;line-height:1.05;
+  /* 4.55cqi is the headline's own width-to-height ratio: at that size the
+     sentence lands one line long and just short of the column edge. Narrower
+     columns hit the 1.85rem floor and it wraps normally. */
+  h1{font-size:clamp(1.85rem,4.55cqi,3.4rem);font-weight:600;line-height:1.08;
     letter-spacing:-.025em;margin:0 0 .9rem;}
   h1 .em{color:var(--accent);}
-  .lede{color:var(--muted);font-size:1.06rem;max-width:58ch;margin:0 0 1.9rem;}
+  /* No measure cap: the 2in gutters already set the column, and a 58ch cap
+     inside a 1250px column left the lede ending at 59% of the width, reading
+     as a broken line rather than a deliberate one. */
+  .lede{color:var(--muted);font-size:1.15rem;text-wrap:pretty;margin:0 0 1.9rem;}
   .head{display:flex;align-items:center;gap:.5rem;margin:0 0 .55rem;}
   .k{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
     color:var(--muted);margin:0;}
@@ -344,7 +352,7 @@ _LANDING_PAGE = """<!doctype html>
 <body>
 <div class="wrap">
   <p class="eyebrow">Single-cell classifier &middot; live demo</p>
-  <h1>Name a kidney cell<br>from the genes it <span class="em">switches on</span>.</h1>
+  <h1>Name a kidney cell from the genes it <span class="em">switches on</span>.</h1>
   <p class="lede">A model trained on 60,725 single cells &mdash; pooled from five human-kidney
      studies &mdash; names which of 10 cell types a cell is, from just 293 genes. Pick a real
      cell it never saw during training and watch it read the expression.</p>
