@@ -207,7 +207,7 @@ _LANDING_PAGE = """<!doctype html>
      a figure from this field rather than a generic light theme. Deliberately
      single-theme: a stained slide does not have a dark mode. */
   :root{
-    --bg:#EBEEF1; --panel:#FFFFFF; --panel2:#FAFBFC; --chip:#F4F6F8; --line:#D6DCE2;
+    --bg:#F2F5F7; --panel:#FFFFFF; --panel2:#FCFDFD; --chip:#EEF2F5; --line:#D8DFE5;
     --ink:#17202A; --muted:#5F6E7B; --faint:#BCC6CF;
     --accent:#2A788E; --accent2:#4B9B45;
     --lo:#46327E; --hi:#D9B310;          /* viridis endpoints: indigo <-> yellow */
@@ -218,7 +218,7 @@ _LANDING_PAGE = """<!doctype html>
   }
   *{box-sizing:border-box}
   body{margin:0;background:
-      radial-gradient(1100px 480px at 50% -200px,#DCE5E9,var(--bg) 70%),var(--bg);
+      radial-gradient(1100px 480px at 50% -200px,#E6EDF1,var(--bg) 70%),var(--bg);
     color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
   .wrap{margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 2in 4rem;}
   /* Below ~1000px a pair of 2in gutters would leave less page than margin, so
@@ -234,15 +234,18 @@ _LANDING_PAGE = """<!doctype html>
   .head{display:flex;align-items:center;gap:.5rem;margin:0 0 .55rem;}
   .k{font-family:var(--mono);font-size:.72rem;letter-spacing:.18em;text-transform:uppercase;
     color:var(--muted);margin:0;}
-  .q{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:transparent;
-    color:var(--muted);font-family:var(--mono);font-size:.72rem;line-height:16px;text-align:center;
-    cursor:pointer;padding:0;flex:0 0 auto;}
-  .q{cursor:help;}
-  .q:hover{color:var(--ink);border-color:var(--faint);}
+/* Solid fill and a mid-grey ring rather than a transparent one hairlined in
+     --line: the stat cards sit on colour now, and a --line border against a
+     tint is invisible. */
+  .q{width:19px;height:19px;border-radius:50%;border:1px solid var(--faint);
+    background:var(--panel);color:var(--muted);font-family:var(--mono);font-size:.72rem;
+    line-height:17px;text-align:center;cursor:help;padding:0;flex:0 0 auto;
+    transition:color .15s,border-color .15s;}
+  .q:hover{color:var(--accent);border-color:var(--accent);}
   /* Kept in the DOM purely as the tooltip's text; never rendered in flow. */
   .explain{display:none;}
-  /* Fixed, not absolute: .stats sets overflow:hidden, so a popover positioned
-     inside a stat tile would be clipped by its own container. */
+  /* Fixed, not absolute, so the tooltip is never subject to an ancestor's
+     overflow or stacking context -- it outlives whatever the cards do. */
   .tip{position:fixed;z-index:50;max-width:22rem;display:none;
     background:var(--ink);color:#EEF2F5;font-size:.84rem;line-height:1.5;
     padding:.65rem .8rem;border-radius:9px;
@@ -481,9 +484,9 @@ g('s-types').textContent=(DATA.classes||[]).length||'--';
 g('f-model').textContent=(DATA.model_type||'model')+' - '+(DATA.n_test||'?')+' held-out cells';
 
 // "?" explainers, as hover tooltips. One shared fixed-position element rather
-// than one popover per button: fixed escapes .stats' overflow:hidden, which
-// would otherwise clip a tooltip opened inside a stat tile. Focus and click are
-// wired alongside hover so the keyboard and a touchscreen can both reach them.
+// than one popover per button, so no ancestor's overflow or stacking context can
+// clip it. Focus and click are wired alongside hover so the keyboard and a
+// touchscreen can both reach them.
 const tip=document.createElement('div');
 tip.className='tip'; tip.setAttribute('role','tooltip');
 document.body.appendChild(tip);
