@@ -1,0 +1,18 @@
+# Everything the serving function does not need. The notebooks and CSVs are the
+# training side of the project; model.joblib is the scikit-learn model this
+# deployment deliberately cannot load (see api/requirements.txt).
+*.ipynb
+*.csv
+artifacts/model.joblib
+docs
+tests
+train.py
+export_onnx.py
+Dockerfile
+.dockerignore
+fly.toml
+.github
+.pytest_cache
+.ruff_cache
+__pycache__
+*.egg-info

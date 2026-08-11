@@ -1,0 +1,10 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 30,
+      "includeFiles": "{src,artifacts}/**",
+      "excludeFiles": "{*.csv,*.ipynb,.git/**,.venv/**,.vercel/**,tests/**,docs/**,artifacts/model.joblib,**/__pycache__/**,**/*.pyc,**/*.egg-info/**,.pytest_cache/**,.ruff_cache/**}"
+    }
+  }
+}

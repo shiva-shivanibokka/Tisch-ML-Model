@@ -28,6 +28,11 @@ ARTIFACTS_DIR = Path(os.environ.get("KIDNEY_ARTIFACTS_DIR", ROOT / "artifacts"))
 MODEL_PATH = ARTIFACTS_DIR / "model.joblib"
 METRICS_PATH = ARTIFACTS_DIR / "metrics.json"
 EXAMPLES_PATH = ARTIFACTS_DIR / "examples.json"
+# ONNX export of the same pipeline, used where scikit-learn will not fit (see
+# export_onnx.py). Preferred by serve.py when present, so a deployment can ship
+# onnxruntime alone; the joblib stays the source of truth for training.
+MODEL_ONNX_PATH = ARTIFACTS_DIR / "model.onnx"
+MODEL_ONNX_META_PATH = ARTIFACTS_DIR / "model_onnx.json"
 
 
 def ensure_artifacts_dir() -> None:

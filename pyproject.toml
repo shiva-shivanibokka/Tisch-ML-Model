@@ -7,13 +7,22 @@ name = "kidney-scrna"
 version = "1.0.0"
 description = "Kidney scRNA-seq cell-type classifier: pipeline, serving API, and demo."
 requires-python = ">=3.10"
+# Serving only. The deployment platform installs exactly this list, so anything
+# added here ships to production — see the `train` extra for the pipeline that
+# produces the model but is never imported while answering a request.
 dependencies = [
-    "pandas>=2.0", "numpy>=1.24", "scikit-learn>=1.3", "scipy>=1.10",
-    "imbalanced-learn>=0.11", "scikit-optimize>=0.9", "joblib>=1.3",
     "fastapi>=0.110", "uvicorn[standard]>=0.29", "pydantic>=2.6",
+    "numpy>=1.24", "onnxruntime>=1.17",
 ]
 
 [project.optional-dependencies]
+# Everything needed to retrain and re-export. `pip install -e ".[train]"` (or
+# `pip install -r requirements.txt`) before running train.py or export_onnx.py.
+train = [
+    "pandas>=2.0", "scikit-learn>=1.3", "scipy>=1.10", "joblib>=1.3",
+    "imbalanced-learn>=0.11", "scikit-optimize>=0.9",
+    "skl2onnx>=1.16", "onnx>=1.15",
+]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 notebooks = ["matplotlib>=3.7", "seaborn>=0.12"]
 

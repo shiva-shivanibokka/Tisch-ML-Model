@@ -18,8 +18,10 @@ jobs:
           python-version: "3.11"
           cache: pip
 
-      - name: Install package + dev deps
-        run: pip install -e ".[dev]"
+      - name: Install package + train/dev deps
+        # The bare install is serving-only (that list is what the deployment
+        # ships); the tests exercise the training pipeline, so they need [train].
+        run: pip install -e ".[train,dev]"
 
       - name: Run tests
         run: pytest -q

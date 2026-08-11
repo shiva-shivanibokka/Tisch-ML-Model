@@ -6,9 +6,9 @@ Classifying human kidney cell types from single-cell gene expression — a leaka
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 ![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)
 
-### 🔬 [Live demo → tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/)
+### 🔬 [Live demo → tisch-kidney-classifier.vercel.app](https://tisch-kidney-classifier.vercel.app/)
 
-Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature. *(Hosted on Fly.io; the machine sleeps when idle, so the first request may take a few seconds to wake it.)*
+Click a real held-out kidney cell (or draw a random one) and the deployed model predicts its type in real time — showing the predicted cell type (✓/✗ against the true label), the top-3 most likely types with probabilities, and the cell's 293-gene expression signature. *(Serverless on Vercel, ~200 ms per prediction, no cold-start wait.)*
 
 ---
 
@@ -16,7 +16,7 @@ Click a real held-out kidney cell (or draw a random one) and the deployed model 
 
 - **What it does:** Takes ~60,000 single kidney cells (each described by 2,358 gene expression values, pooled from five independent published studies) and trains machine-learning models to predict each cell's type — then serves the winning model behind a REST API and interactive web demo.
 - **Hardest problem solved:** Doing the evaluation *honestly* on heavily imbalanced biological data. Class balancing (SMOTE + majority undersampling) is applied **inside each cross-validation fold**, not before the split — eliminating a common data-leakage trap that had previously inflated the cross-validated score to ~0.98 while the true test performance was far lower.
-- **Impact / result:** The fixed pipeline is reproducible end-to-end (SVM **CV 0.80 ≈ test 0.80 weighted F1**, ROC-AUC **0.97** — CV matching test proves no leakage), and the model is **[live and serving predictions](https://tisch-kidney-classifier.fly.dev/)** on Fly.io.
+- **Impact / result:** The fixed pipeline is reproducible end-to-end (SVM **CV 0.80 ≈ test 0.80 weighted F1**, ROC-AUC **0.97** — CV matching test proves no leakage), and the model is **[live and serving predictions](https://tisch-kidney-classifier.vercel.app/)** on Vercel.
 
 ---
 
@@ -140,7 +140,7 @@ flowchart TD
 
 The same pipeline is packaged (`src/kidney_scrna/`) and served. `train.py` runs the whole thing headless and exports a **compact, deployable model** — a `StandardScaler → RBF-SVC` pipeline over just the 293 selected genes (12.7 MB). SMOTE + undersampling are applied *only while training*; they are **not** part of the served pipeline, which takes raw gene-expression values and returns calibrated class probabilities.
 
-A **[FastAPI](https://tisch-kidney-classifier.fly.dev/) service** exposes it:
+A **[FastAPI](https://tisch-kidney-classifier.vercel.app/) service** exposes it:
 
 | Endpoint | Method | Returns |
 |---|---|---|
@@ -149,13 +149,14 @@ A **[FastAPI](https://tisch-kidney-classifier.fly.dev/) service** exposes it:
 | `/model` | GET | Metadata: model type, the 293 genes, 10 class labels, test metrics |
 | `/predict` | POST | `{features: {gene: value, …}}` → `{prediction, confidence, top3, model_type}` |
 
-The **demo page** (`/`) is a self-contained single-page UI: click a real held-out cell (one per cell type) or draw a random one, and the result renders inline right below the picker — the predicted cell type with a ✓/✗ against the true label, the **top-3** most likely types with probabilities, and the cell's **293-gene expression signature** (each gene z-scored against the training average; cyan = under-expressed, red = over-expressed). It also surfaces header stat tiles (Test F1 0.804, ROC-AUC 0.969, 293 genes, 10 cell types) and a per-class F1 panel. Every prediction is logged as a structured JSON line. The service is containerised (`Dockerfile`) and **deployed live on Fly.io** (`fly.toml`), built via Fly's remote builder — the 120 MB image bakes in only the model + demo samples; the 292 MB dataset is never shipped.
+The **demo page** (`/`) is a self-contained single-page UI: click a real held-out cell (one per cell type) or draw a random one, and the result renders inline right below the picker — the predicted cell type with a ✓/✗ against the true label, the **top-3** most likely types with probabilities, and the cell's **293-gene expression signature** (each gene z-scored against the training average; cyan = under-expressed, red = over-expressed). It also surfaces header stat tiles (Test F1 0.804, ROC-AUC 0.969, 293 genes, 10 cell types) and a per-class F1 panel. Every prediction is logged as a structured JSON line. The same app runs two ways: containerised (`Dockerfile`, ~120 MB, non-root, bakes in only the model + demo samples — the 292 MB dataset is never shipped) and **deployed live as a Vercel function** (`vercel.json`). See [Deployment](#deployment) for why the serverless build serves ONNX instead of scikit-learn.
 
 ```bash
 python train.py                              # train + export artifacts/ (~35 min CPU; --quick for a smoke test)
+python export_onnx.py                        # export artifacts/model.onnx + verify it against scikit-learn
 uvicorn kidney_scrna.serve:app --reload      # run the API + demo locally at http://localhost:8000
 pytest                                       # run the test suite
-fly deploy                                   # deploy to Fly.io
+vercel deploy --prod                         # deploy
 ```
 
 ---
@@ -164,7 +165,7 @@ fly deploy                                   # deploy to Fly.io
 
 - **Production ML deployment / MLOps** — a headless training CLI that exports a versioned model artifact, a serving layer decoupled from the training/notebook code, and a live containerised deployment on a cloud host.
 - **RESTful API design** — a FastAPI service with health, metadata, and prediction endpoints, request validation, typed responses, and structured JSON logging.
-- **Containerization & cloud deployment** — Docker image (non-root, minimal) deployed to **Fly.io** via a remote builder, with a `/health` check and scale-to-zero configuration.
+- **Containerization & serverless deployment** — one FastAPI app shipped two ways: a minimal non-root Docker image, and a Vercel function that swaps scikit-learn for **ONNX Runtime** to halve the bundle, with the export gated on numerical agreement with the original model.
 - **Data engineering / ETL pipeline design** — a staged pipeline that moves raw 292 MB scRNA-seq data through cleaning, label harmonisation across five heterogeneous studies, and feature selection into a model-ready form, with artefacts passed between stages.
 - **Rigorous ML evaluation & data-leakage prevention** — fit-on-train-only preprocessing and per-fold resampling inside `imblearn` pipelines; CV/test agreement used as the correctness check.
 - **Feature selection on high-dimensional data** — Recursive Feature Elimination with a fast SGD-trained linear-SVM ranker, reducing 2,358 sparse gene features to 293.
@@ -178,7 +179,7 @@ fly deploy                                   # deploy to Fly.io
 
 ## Tech Stack
 
-CPU-only and reproducible from `requirements.txt` — no GPU required. The package installs with `pip install -e .` (see [`pyproject.toml`](pyproject.toml)).
+CPU-only and reproducible from `requirements.txt` — no GPU required. `pip install -e .` installs the serving dependencies only, matching what the deployment ships; add the `train` extra (`pip install -e ".[train]"`) for the pipeline that produces the model (see [`pyproject.toml`](pyproject.toml)).
 
 | Library / Tool | Role |
 |---|---|
@@ -189,9 +190,10 @@ CPU-only and reproducible from `requirements.txt` — no GPU required. The packa
 | `scipy` | Sampling distributions for randomised search |
 | `matplotlib`, `seaborn` | EDA plots, confusion matrices, ROC curves |
 | `FastAPI`, `uvicorn`, `pydantic` | Serving API + interactive demo, request validation |
-| `joblib` | Model serialization (the deployed artifact) |
+| `joblib` | Model serialization (the trained artifact) |
+| `skl2onnx`, `onnxruntime` | Portable export of the fitted pipeline; the runtime the deployment serves |
 | `pytest` | Test suite (data, features, models, evaluation, API) |
-| `Docker`, `Fly.io` | Containerization and live cloud deployment |
+| `Docker`, `Vercel` | Containerization and live serverless deployment |
 
 Exact pinned versions are in [`requirements.txt`](requirements.txt).
 
@@ -210,8 +212,10 @@ cd Tisch-ML-Model
 python -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
 
-# 3. Install dependencies (or `pip install -e .` to also install the package)
+# 3. Install dependencies (everything: pipeline, serving, notebooks)
 pip install -r requirements.txt
+#    Serving only, as deployed:            pip install -e .
+#    Serving + retraining and ONNX export: pip install -e ".[train]"
 
 # 4. Put the dataset CSV in this folder, then launch Jupyter
 jupyter lab
@@ -251,12 +255,13 @@ Tisch-ML-Model/
 │   ├── evaluate.py             #   metrics (weighted F1, ROC-AUC, per-class)
 │   └── serve.py                #   FastAPI app + interactive demo page
 ├── train.py                    # Headless CLI: run pipeline → export artifacts/
-├── artifacts/                  # model.joblib (served), metrics.json, examples.json (demo samples)
+├── export_onnx.py              # model.joblib -> model.onnx, verified against scikit-learn
+├── artifacts/                  # model.joblib (trained), model.onnx (served), metrics.json, examples.json
 ├── tests/                      # pytest suite (data, features, models, evaluate, API)
 │
 ├── Dockerfile, .dockerignore   # Container image (bakes the model, not the dataset)
-├── fly.toml                    # Fly.io deployment config
-├── pyproject.toml              # Package metadata (`pip install -e .`)
+├── api/index.py, vercel.json   # Vercel function entrypoint + bundle config
+├── pyproject.toml              # Package metadata (serving deps; `.[train]` adds the pipeline)
 ├── requirements.txt            # Pinned dependencies (CPU-only)
 ├── LICENSE                     # MIT
 ├── .gitignore                  # Excludes the 292 MB dataset + generated intermediate files
@@ -352,7 +357,20 @@ The suite runs automatically on every push and pull request via **GitHub Actions
 
 ## Deployment
 
-**Live on Fly.io: [tisch-kidney-classifier.fly.dev](https://tisch-kidney-classifier.fly.dev/).** The `Dockerfile` builds a minimal non-root image (~120 MB) that bakes in the trained model and demo samples — never the 292 MB dataset. It is deployed with `fly deploy` using Fly's remote builder (no local Docker required), configured (`fly.toml`) with a `/health` check and scale-to-zero so it costs nothing while idle. See [Serving & Deployment](#serving--deployment) for the full flow.
+**Live on Vercel: [tisch-kidney-classifier.vercel.app](https://tisch-kidney-classifier.vercel.app/).** `api/index.py` hands the same FastAPI app to Vercel's Python runtime; `vercel.json` ships `src/` and the model artifacts and excludes the notebooks, tests and CSVs. The `Dockerfile` still builds a minimal non-root image (~120 MB) that bakes in the trained model and demo samples — never the 292 MB dataset — so the service runs unchanged on any container host.
+
+### Why the serverless build serves ONNX
+
+The serving stack is picked to fit the platform, and the platform has a budget: a Vercel function is capped at **500 MB unpacked**. Measured against the Linux wheels the deploy actually installs:
+
+| Serving stack | Dependencies | + model | Cold start |
+|---|---|---|---|
+| `scikit-learn` + `scipy` + `numpy` | 278 MB | 291 MB (`model.joblib`, 13.3 MB) | imports scipy |
+| `onnxruntime` + `numpy` | 145 MB | 153 MB (`model.onnx`, 8.1 MB) | ~200 ms warm |
+
+scikit-learn fits, but only just, and it drags in 143 MB of scipy that inference never calls. `export_onnx.py` converts the fitted `StandardScaler → RBF-SVC` pipeline once and the deployment ships `onnxruntime` alone — a little under half the footprint, and no separate model server to keep alive.
+
+The risk in swapping runtimes is a model that quietly predicts differently from the one in the benchmarks above, so the export is gated on agreement rather than assumed: `export_onnx.py` runs both implementations over the 20 held-out demo cells plus 200 random rows and **exits non-zero unless every predicted label matches and the probabilities agree to 1e-4**. The current export differs from scikit-learn by at most `1.26e-05`, with zero label disagreements. `serve.py` prefers `model.onnx` when present and falls back to `model.joblib`, so the container and the function serve identical predictions from one code path.
 
 ---
 

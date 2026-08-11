@@ -19,7 +19,6 @@ import time
 import warnings
 from typing import Any
 
-import joblib
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
@@ -46,14 +45,64 @@ def _log(event: str, **f: Any) -> None:
 _BUNDLE: dict | None = None
 
 
+class _OnnxModel:
+    """The exported pipeline, behind the slice of the sklearn API predict() uses.
+
+    Lets the endpoint stay written against one model interface whether the
+    deployment ships scikit-learn or onnxruntime. The graph carries the scaler
+    and the SVC together, so this is the whole pipeline, not just the classifier.
+    """
+
+    def __init__(self, path, classes: list[str]) -> None:
+        import onnxruntime as ort
+
+        self._sess = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
+        self._input = self._sess.get_inputs()[0].name
+        self.classes_ = classes
+
+    def predict_proba(self, rows: list[list[float]]) -> list[list[float]]:
+        import numpy as np
+
+        # The ONNX SVMClassifier op is float32-only; export_onnx.py gates the
+        # export on the resulting probabilities matching scikit-learn to 1e-4.
+        out = self._sess.run(None, {self._input: np.asarray(rows, dtype=np.float32)})
+        return np.asarray(out[1]).tolist()
+
+
+def model_available() -> bool:
+    return config.MODEL_ONNX_PATH.exists() or config.MODEL_PATH.exists()
+
+
 def load_bundle() -> dict:
+    """Load the served model once per process, preferring the ONNX export.
+
+    ONNX first because the deployments that have it are the ones that cannot
+    afford scikit-learn — checking the joblib first would import a dependency
+    that is deliberately not installed there.
+    """
     global _BUNDLE
-    if _BUNDLE is None:
-        if not config.MODEL_PATH.exists():
-            raise FileNotFoundError(
-                f"No model at {config.MODEL_PATH}. Run `python train.py` first.")
-        _BUNDLE = joblib.load(config.MODEL_PATH)
-        _log("model_loaded", model_type=_BUNDLE["model_type"], n_genes=len(_BUNDLE["genes"]))
+    if _BUNDLE is not None:
+        return _BUNDLE
+    if config.MODEL_ONNX_PATH.exists():
+        meta = json.loads(config.MODEL_ONNX_META_PATH.read_text())
+        _BUNDLE = {
+            "model": _OnnxModel(config.MODEL_ONNX_PATH, meta["classes"]),
+            "genes": meta["genes"],
+            "classes": meta["classes"],
+            "model_type": meta["model_type"],
+        }
+        _log("model_loaded", model_type=_BUNDLE["model_type"],
+             n_genes=len(_BUNDLE["genes"]), runtime="onnxruntime")
+        return _BUNDLE
+    if not config.MODEL_PATH.exists():
+        raise FileNotFoundError(
+            f"No model at {config.MODEL_ONNX_PATH} or {config.MODEL_PATH}. "
+            "Run `python train.py` first.")
+    import joblib
+
+    _BUNDLE = joblib.load(config.MODEL_PATH)
+    _log("model_loaded", model_type=_BUNDLE["model_type"],
+         n_genes=len(_BUNDLE["genes"]), runtime="scikit-learn")
     return _BUNDLE
 
 
@@ -91,7 +140,7 @@ app = FastAPI(
 
 @app.get("/health")
 def health() -> dict:
-    return {"status": "ok", "model_available": config.MODEL_PATH.exists()}
+    return {"status": "ok", "model_available": model_available()}
 
 
 @app.get("/model")
