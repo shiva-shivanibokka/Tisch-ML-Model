@@ -50,7 +50,8 @@ def sweep_k(X_train, y_train, order, seed=config.RANDOM_SEED):
     n = X_train.shape[1]
     counts, k = [], n // 4
     while k >= 1:
-        counts.append(k); k //= 2
+        counts.append(k)
+        k //= 2
     cv = StratifiedKFold(3, shuffle=True, random_state=seed)
     ev = SGDClassifier(loss="hinge", alpha=1e-4, max_iter=1500, tol=1e-3, random_state=seed)
     scores = []

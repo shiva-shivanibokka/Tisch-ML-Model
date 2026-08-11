@@ -220,7 +220,11 @@ _LANDING_PAGE = """<!doctype html>
   body{margin:0;background:
       radial-gradient(1100px 480px at 50% -200px,#DCE5E9,var(--bg) 70%),var(--bg);
     color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
-  .wrap{max-width:820px;margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 1.25rem 4rem;}
+  .wrap{margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 2in 4rem;}
+  /* Below ~1000px a pair of 2in gutters would leave less page than margin, so
+     they fall back to a proportional one. */
+  @media(max-width:1000px){.wrap{padding-left:5vw;padding-right:5vw;}}
+  @media(max-width:520px){.wrap{padding-left:1.15rem;padding-right:1.15rem;}}
   .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.28em;
     text-transform:uppercase;color:var(--accent);margin:0 0 1rem;}
   h1{font-size:clamp(2rem,5.4vw,3.1rem);font-weight:600;line-height:1.05;
@@ -246,7 +250,7 @@ _LANDING_PAGE = """<!doctype html>
   .stat .k{margin:.15rem 0 0;letter-spacing:.1em;font-size:.64rem;}
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
     border-radius:16px;padding:1.5rem;margin-bottom:1.5rem;box-shadow:var(--shadow);}
-  .chips{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;}
+  .chips{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:.55rem;}
   .chip{cursor:pointer;text-align:left;padding:.72rem .9rem;border-radius:10px;border:1px solid var(--line);
     background:var(--chip);color:var(--ink);font-family:var(--sans);font-size:.92rem;
     transition:border-color .15s,background .15s,transform .06s;}
@@ -265,13 +269,22 @@ _LANDING_PAGE = """<!doctype html>
   .readout.show{opacity:1;max-height:none;}
   .rhead{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
     color:var(--muted);display:flex;align-items:center;gap:.5rem;margin:.2rem 0 .6rem;}
-  .heat{display:flex;gap:1px;height:52px;border-radius:5px;overflow:hidden;
-    border:1px solid var(--line);background:var(--chip);}
+  /* No gap. At 293 stripes a 1px gap consumed 48% of the strip, so half of what
+     looked like signature was actually the container showing through -- washing
+     out the colour and leaving each gene ~1px to hover. */
+  .heat{display:flex;height:52px;border-radius:5px;overflow:hidden;
+    border:1px solid var(--line);background:var(--chip);cursor:crosshair;}
   .cell{flex:1 1 0;background:var(--chip);opacity:0;transition:opacity .5s ease,background .5s ease;}
   .readout.show .cell{opacity:1;}
   .heatlabels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.64rem;
     color:var(--muted);margin-top:.5rem;letter-spacing:.04em;}
   .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle;margin:0 .25rem;}
+  .genelab{font-family:var(--mono);font-size:.78rem;margin:.55rem 0 0;min-height:1.4rem;
+    display:flex;align-items:center;gap:.5rem;}
+  .genelab .gsw{width:11px;height:11px;border-radius:2px;border:1px solid var(--line);flex:0 0 auto;}
+  .genelab .gname{color:var(--ink);font-weight:500;letter-spacing:.02em;}
+  .genelab .gz{color:var(--muted);font-variant-numeric:tabular-nums;}
+  .genelab .ghint{color:var(--faint);}
   .verdict{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:1.4rem 0 .2rem;}
   .verdict .big{font-size:1.5rem;font-weight:600;letter-spacing:-.02em;color:var(--ink);
     display:inline-flex;align-items:baseline;gap:.5rem;}
@@ -348,6 +361,7 @@ _LANDING_PAGE = """<!doctype html>
       <p class="explain">Each stripe is one of the 293 genes' expression in this cell,
          standardised against the training average. Indigo = under-expressed, yellow = over-expressed &mdash; the two ends of the viridis scale these plots conventionally use. The colour scale is square-root, because most genes in any single cell sit close to the average; hover a stripe for its exact value.</p>
       <div class="heat" id="heat"></div>
+      <p class="genelab" id="generead"></p>
       <div class="heatlabels">
         <span><span class="swatch" style="background:var(--lo)"></span>under-expressed</span>
         <span>293-gene signature</span>
@@ -469,12 +483,37 @@ g('perclass').innerHTML=rows.map(r=>
   'background:'+cc(r.name)+'"></div></div>'+
   '<span class="pct">'+r.f1.toFixed(2)+'</span></div>').join('');
 
+// Naming a gene under the cursor. 293 stripes across the strip is a few pixels
+// each, so the name goes in a fixed line below rather than a native tooltip:
+// a tooltip that needs a one-second hover on a 3px target is not a readout.
+// Listeners are bound once to the container and read the stripe's own dataset,
+// so rebuilding the strip for a new cell does not need to rebind 293 handlers.
+const GHINT='<span class="ghint">Hover the strip to name a gene</span>';
+function clearGene(){ g('generead').innerHTML=GHINT; }
+function showGene(el){
+  const z=parseFloat(el.dataset.z);
+  const dir=z>0.15?'over-expressed':(z<-0.15?'under-expressed':'near training average');
+  g('generead').innerHTML='<span class="gsw" style="background:'+el.style.background+'"></span>'+
+    '<span class="gname">'+el.dataset.gene+'</span>'+
+    '<span class="gz">z '+(z>0?'+':'')+z.toFixed(2)+' &middot; '+dir+'</span>';
+}
+(function(){
+  const heat=g('heat');
+  // pointer* rather than mouse*, so a finger dragged along the strip reads it too.
+  const onMove=e=>{ const t=e.target; if(t&&t.dataset&&t.dataset.gene)showGene(t); };
+  heat.addEventListener('pointermove',onMove);
+  heat.addEventListener('pointerdown',onMove);
+  heat.addEventListener('pointerleave',clearGene);
+  clearGene();
+})();
+
 function buildHeat(features){
-  const heat=g('heat'); heat.innerHTML='';
+  const heat=g('heat'); heat.innerHTML=''; clearGene();
   genes.forEach((gn,i)=>{
     const st=stats[gn]||{mean:0,std:1};
     const z=(features[gn]-st.mean)/(st.std||1);
     const c=document.createElement('div'); c.className='cell';
+    c.dataset.gene=gn; c.dataset.z=z.toFixed(2);
     c.title=gn+'  z '+z.toFixed(2);
     requestAnimationFrame(()=>{c.style.background=divColor(z);});
     heat.appendChild(c);
