@@ -237,14 +237,29 @@ _LANDING_PAGE = """<!doctype html>
   .q{width:18px;height:18px;border-radius:50%;border:1px solid var(--line);background:transparent;
     color:var(--muted);font-family:var(--mono);font-size:.72rem;line-height:16px;text-align:center;
     cursor:pointer;padding:0;flex:0 0 auto;}
+  .q{cursor:help;}
   .q:hover{color:var(--ink);border-color:var(--faint);}
-  .explain{display:none;margin:0 0 1rem;color:var(--muted);font-size:.86rem;
-    border-left:2px solid var(--line);padding-left:.75rem;line-height:1.5;}
-  .explain.open{display:block;}
-  .stats{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;
-    overflow:hidden;margin-bottom:2.4rem;background:var(--panel);box-shadow:var(--shadow);}
-  .stat{flex:1 1 22%;min-width:120px;padding:.85rem 1.1rem;border-right:1px solid var(--line);}
-  .stat:last-child{border-right:0;}
+  /* Kept in the DOM purely as the tooltip's text; never rendered in flow. */
+  .explain{display:none;}
+  /* Fixed, not absolute: .stats sets overflow:hidden, so a popover positioned
+     inside a stat tile would be clipped by its own container. */
+  .tip{position:fixed;z-index:50;max-width:22rem;display:none;
+    background:var(--ink);color:#EEF2F5;font-size:.84rem;line-height:1.5;
+    padding:.65rem .8rem;border-radius:9px;
+    box-shadow:0 10px 30px rgba(23,32,42,.3);}
+  .tip.on{display:block;}
+  /* Four tinted cards rather than one divided strip. The tints step along the
+     same viridis ramp the cell types use, so the row reads as a gradient -- a
+     deliberate sequence -- instead of four unrelated category colours. */
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+    gap:.7rem;margin-bottom:2.4rem;}
+  .stat{padding:.85rem 1.05rem;border:1px solid;border-radius:12px;
+    background:var(--tint);border-color:var(--edge);}
+  .stat b{color:var(--deep);}
+  .s1{--tint:rgba(72,40,120,.075);--edge:rgba(72,40,120,.24);--deep:#4B2A73;}
+  .s2{--tint:rgba(49,104,142,.085);--edge:rgba(49,104,142,.26);--deep:#28607F;}
+  .s3{--tint:rgba(31,158,137,.10);--edge:rgba(31,158,137,.28);--deep:#187A68;}
+  .s4{--tint:rgba(83,160,58,.10);--edge:rgba(83,160,58,.28);--deep:#3C7A2C;}
   .stat b{font-family:var(--mono);font-size:1.35rem;font-weight:500;display:block;letter-spacing:-.02em;
     font-variant-numeric:tabular-nums;}
   .stat .k{margin:.15rem 0 0;letter-spacing:.1em;font-size:.64rem;}
@@ -254,7 +269,7 @@ _LANDING_PAGE = """<!doctype html>
   .chip{cursor:pointer;text-align:left;padding:.72rem .9rem;border-radius:10px;border:1px solid var(--line);
     background:var(--chip);color:var(--ink);font-family:var(--sans);font-size:.92rem;
     transition:border-color .15s,background .15s,transform .06s;}
-  .chip:hover{border-color:var(--faint);background:#EDF1F4;}
+  .chip:hover{filter:brightness(.975);}
   .chip:active{transform:translateY(1px);}
   .chip.on{border-color:var(--accent);}
   .chip .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:.5rem;
@@ -265,8 +280,10 @@ _LANDING_PAGE = """<!doctype html>
     border:1px dashed var(--line);background:transparent;color:var(--muted);font-family:var(--mono);
     font-size:.82rem;letter-spacing:.03em;transition:.15s;}
   .rand:hover{color:var(--ink);border-color:var(--faint);background:var(--chip);}
-  .readout{margin-top:1.4rem;opacity:0;max-height:0;overflow:hidden;transition:opacity .4s ease;}
-  .readout.show{opacity:1;max-height:none;}
+  /* Always open. It used to be height-collapsed until the first prediction,
+     which left the panel looking like it ended at the buttons. */
+  .readout{margin-top:1.4rem;}
+  .empty{color:var(--faint);font-family:var(--mono);font-size:.82rem;margin:.1rem 0 1.1rem;}
   .rhead{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
     color:var(--muted);display:flex;align-items:center;gap:.5rem;margin:.2rem 0 .6rem;}
   /* No gap. At 293 stripes a 1px gap consumed 48% of the strip, so half of what
@@ -274,8 +291,7 @@ _LANDING_PAGE = """<!doctype html>
      out the colour and leaving each gene ~1px to hover. */
   .heat{display:flex;height:52px;border-radius:5px;overflow:hidden;
     border:1px solid var(--line);background:var(--chip);cursor:crosshair;}
-  .cell{flex:1 1 0;background:var(--chip);opacity:0;transition:opacity .5s ease,background .5s ease;}
-  .readout.show .cell{opacity:1;}
+  .cell{flex:1 1 0;background:var(--chip);transition:background .5s ease;}
   .heatlabels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.64rem;
     color:var(--muted);margin-top:.5rem;letter-spacing:.04em;}
   .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle;margin:0 .25rem;}
@@ -286,8 +302,9 @@ _LANDING_PAGE = """<!doctype html>
   .genelab .gz{color:var(--muted);font-variant-numeric:tabular-nums;}
   .genelab .ghint{color:var(--faint);}
   .verdict{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:1.4rem 0 .2rem;}
-  .verdict .big{font-size:1.5rem;font-weight:600;letter-spacing:-.02em;color:var(--ink);
-    display:inline-flex;align-items:baseline;gap:.5rem;}
+  .verdict .big{font-size:1.35rem;font-weight:600;letter-spacing:-.02em;color:var(--ink);
+    display:inline-flex;align-items:center;gap:.55rem;padding:.3rem .75rem .3rem .65rem;
+    border-radius:10px;border:1px solid;}
   .verdict .big .cdot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;align-self:center;}
   .verdict .sci{font-family:var(--mono);font-size:.8rem;color:var(--muted);}
   .match{font-family:var(--mono);font-size:.72rem;padding:.15rem .55rem;border-radius:20px;
@@ -330,19 +347,19 @@ _LANDING_PAGE = """<!doctype html>
      cell it never saw during training and watch it read the expression.</p>
 
   <div class="stats">
-    <div class="stat"><b id="s-f1">&mdash;</b>
+    <div class="stat s1"><b id="s-f1">&mdash;</b>
       <div class="head"><span class="k">Test F1</span><button class="q">?</button></div>
       <p class="explain">Weighted F1 on the held-out test set &mdash; balances precision and
          recall across all 10 cell types, so the majority class can't hide weak ones.</p></div>
-    <div class="stat"><b id="s-auc">&mdash;</b>
+    <div class="stat s2"><b id="s-auc">&mdash;</b>
       <div class="head"><span class="k">ROC-AUC</span><button class="q">?</button></div>
       <p class="explain">How well the model ranks the right cell type, averaged one-vs-rest.
          1.0 is flawless; 0.5 is a coin flip.</p></div>
-    <div class="stat"><b id="s-genes">&mdash;</b>
+    <div class="stat s3"><b id="s-genes">&mdash;</b>
       <div class="head"><span class="k">Genes used</span><button class="q">?</button></div>
       <p class="explain">The model reads only this many genes &mdash; selected from 2,358 &mdash;
          so each prediction is compact.</p></div>
-    <div class="stat"><b id="s-types">&mdash;</b>
+    <div class="stat s4"><b id="s-types">&mdash;</b>
       <div class="head"><span class="k">Cell types</span><button class="q">?</button></div>
       <p class="explain">The 10 most abundant kidney cell types in the dataset, from tubular
          and vascular cells to immune populations.</p></div>
@@ -350,13 +367,15 @@ _LANDING_PAGE = """<!doctype html>
 
   <div class="panel">
     <div class="head"><p class="k">Pick a cell</p><button class="q">?</button></div>
-    <p class="explain">Real held-out cells the model never trained on &mdash; one per cell type.
-       Click a labelled one, or draw a random cell &mdash; the model reads its 293 genes live and
-       the result appears right below.</p>
+    <p class="explain">Twenty real cells the model never trained on, two per cell type. The
+       labelled buttons show the first of each; the draw button picks any of the twenty at random,
+       skipping the one already on screen. Either way the model reads its 293 genes live.</p>
     <div class="chips" id="chips"></div>
-    <button class="rand" id="rand">&#9862; Draw a random held-out cell</button>
+    <button class="rand" id="rand">&#9862; Draw a random one of the 20 held-out cells</button>
 
     <div class="readout" id="readout">
+      <p class="empty" id="empty">Pick a cell above &mdash; its 293 genes go to the model and the
+         reading appears here.</p>
       <div class="rhead"><span>Expression signature</span><button class="q">?</button></div>
       <p class="explain">Each stripe is one of the 293 genes' expression in this cell,
          standardised against the training average. Indigo = under-expressed, yellow = over-expressed &mdash; the two ends of the viridis scale these plots conventionally use. The colour scale is square-root, because most genes in any single cell sit close to the average; hover a stripe for its exact value.</p>
@@ -441,9 +460,14 @@ function divColor(z){const L=2.0;
 // readable as the legend for the rest of the page. Capped at 0.78 because the
 // pale end of viridis disappears against a light ground.
 const CLASSES=DATA.classes||[];
-const CLASS_COLOR={};
-CLASSES.forEach((c,i)=>{CLASS_COLOR[c]=viridis(CLASSES.length>1?(i/(CLASSES.length-1))*0.78:0.4);});
-const cc=name=>CLASS_COLOR[name]||'var(--faint)';
+const CLASS_RGB={};
+function viridisRGB(t){const x=Math.max(0,Math.min(1,t))*(VIRIDIS.length-1),
+  i=Math.min(Math.floor(x),VIRIDIS.length-2),f=x-i;
+  return VIRIDIS[i].map((v,k)=>Math.round(v+(VIRIDIS[i+1][k]-v)*f));}
+CLASSES.forEach((c,i)=>{CLASS_RGB[c]=viridisRGB(CLASSES.length>1?(i/(CLASSES.length-1))*0.78:0.4);});
+const cc=name=>{const r=CLASS_RGB[name];return r?'rgb('+r.join(',')+')':'var(--faint)';};
+// Same hue at low alpha, for washes behind text that still has to be readable.
+const ccA=(name,a)=>{const r=CLASS_RGB[name];return r?'rgba('+r.join(',')+','+a+')':'transparent';};
 
 const samples=DATA.samples||[], genes=DATA.genes||[], stats=DATA.stats||{};
 const met=DATA.metrics||{};
@@ -456,22 +480,64 @@ g('s-genes').textContent=genes.length||'--';
 g('s-types').textContent=(DATA.classes||[]).length||'--';
 g('f-model').textContent=(DATA.model_type||'model')+' - '+(DATA.n_test||'?')+' held-out cells';
 
-// "?" explainers
-document.querySelectorAll('.q').forEach(q=>q.addEventListener('click',()=>{
+// "?" explainers, as hover tooltips. One shared fixed-position element rather
+// than one popover per button: fixed escapes .stats' overflow:hidden, which
+// would otherwise clip a tooltip opened inside a stat tile. Focus and click are
+// wired alongside hover so the keyboard and a touchscreen can both reach them.
+const tip=document.createElement('div');
+tip.className='tip'; tip.setAttribute('role','tooltip');
+document.body.appendChild(tip);
+let tipFor=null;
+function placeTip(q){
+  const r=q.getBoundingClientRect(), m=10;
+  const w=tip.offsetWidth, h=tip.offsetHeight;
+  let left=r.left+r.width/2-w/2;
+  left=Math.max(m,Math.min(left,window.innerWidth-w-m));
+  let top=r.bottom+8;
+  if(top+h>window.innerHeight-m)top=Math.max(m,r.top-h-8);
+  tip.style.left=left+'px'; tip.style.top=top+'px';
+}
+function showTip(q){
   const ex=q.closest('.head,.rhead').nextElementSibling;
-  if(ex&&ex.classList.contains('explain'))ex.classList.toggle('open');
-}));
+  if(!ex||!ex.classList.contains('explain'))return;
+  tip.innerHTML=ex.innerHTML;
+  tip.classList.add('on'); tipFor=q;
+  placeTip(q);
+}
+function hideTip(){ tip.classList.remove('on'); tipFor=null; }
+document.querySelectorAll('.q').forEach(q=>{
+  q.setAttribute('aria-label','What this means');
+  q.addEventListener('pointerenter',()=>showTip(q));
+  q.addEventListener('pointerleave',hideTip);
+  q.addEventListener('focus',()=>showTip(q));
+  q.addEventListener('blur',hideTip);
+  q.addEventListener('click',e=>{e.preventDefault(); tipFor===q?hideTip():showTip(q);});
+});
+// A tooltip anchored to a button that has scrolled away is worse than none.
+window.addEventListener('scroll',()=>{ if(tipFor)placeTip(tipFor); },{passive:true});
+window.addEventListener('resize',()=>{ if(tipFor)placeTip(tipFor); });
+document.addEventListener('keydown',e=>{ if(e.key==='Escape')hideTip(); });
 
 // chips: first held-out cell of each class
 const chips=g('chips'), seen={};
 (DATA.classes||[]).forEach(cls=>{
   const s=samples.find(x=>x.label===cls); if(!s)return;
-  const b=document.createElement('button'); b.className='chip';
+  const b=document.createElement('button'); b.className='chip'; b.dataset.cls=cls;
+  b.style.background=ccA(cls,0.07); b.style.borderColor=ccA(cls,0.30);
   b.innerHTML='<span class="dot" style="background:'+cc(cls)+'"></span>'+cls+
     '<span class="lab">held-out cell</span>';
   b.addEventListener('click',()=>predict(s,b)); chips.appendChild(b);
 });
-g('rand').addEventListener('click',()=>{ if(samples.length)predict(samples[Math.floor(Math.random()*samples.length)],null); });
+// Draws from the 20 samples baked into the page, excluding whichever is already
+// showing -- a "random" button that returns the current cell reads as broken.
+let lastDrawn=-1;
+g('rand').addEventListener('click',()=>{
+  if(!samples.length)return;
+  let i=Math.floor(Math.random()*samples.length);
+  if(samples.length>1&&i===lastDrawn)i=(i+1+Math.floor(Math.random()*(samples.length-1)))%samples.length;
+  lastDrawn=i;
+  predict(samples[i],null);
+});
 if(!samples.length){chips.innerHTML='<p class="hint">No demo samples baked in. Run <code>python train.py</code>.</p>';}
 
 // per-class F1 panel
@@ -488,7 +554,11 @@ g('perclass').innerHTML=rows.map(r=>
 // a tooltip that needs a one-second hover on a 3px target is not a readout.
 // Listeners are bound once to the container and read the stripe's own dataset,
 // so rebuilding the strip for a new cell does not need to rebind 293 handlers.
-const GHINT='<span class="ghint">Hover the strip to name a gene</span>';
+// Rewritten per cell, because a flat-looking strip is usually the honest
+// answer rather than a broken one: this proximal tubule cell has 3 of 293 genes
+// more than 0.5 SD off the training average, while a collecting duct cell has
+// 70. Saying so turns "nothing rendered" into the actual finding.
+let GHINT='<span class="ghint">Hover the strip to name a gene</span>';
 function clearGene(){ g('generead').innerHTML=GHINT; }
 function showGene(el){
   const z=parseFloat(el.dataset.z);
@@ -508,33 +578,54 @@ function showGene(el){
 })();
 
 function buildHeat(features){
-  const heat=g('heat'); heat.innerHTML=''; clearGene();
-  genes.forEach((gn,i)=>{
+  const heat=g('heat'); heat.innerHTML='';
+  let moved=0;
+  genes.forEach((gn)=>{
     const st=stats[gn]||{mean:0,std:1};
     const z=(features[gn]-st.mean)/(st.std||1);
+    if(Math.abs(z)>0.5)moved++;
     const c=document.createElement('div'); c.className='cell';
     c.dataset.gene=gn; c.dataset.z=z.toFixed(2);
     c.title=gn+'  z '+z.toFixed(2);
     requestAnimationFrame(()=>{c.style.background=divColor(z);});
     heat.appendChild(c);
   });
+  GHINT='<span class="ghint">'+moved+' of '+genes.length+
+    ' genes sit more than 0.5 SD from the training average in this cell'+
+    ' &middot; hover a stripe to name it</span>';
+  clearGene();
 }
 
 let busy=false;
 async function predict(sample,btn){
   if(busy)return; busy=true;
-  document.querySelectorAll('.chip').forEach(c=>{c.classList.remove('on');c.style.borderColor='';});
-  if(btn){btn.classList.add('on');btn.style.borderColor=cc(sample.label);}
-  const ro=g('readout'); ro.classList.add('show');
+  try{ await run(sample,btn); } finally { busy=false; }
+}
+
+// Split out so the busy flag is released in a finally. It used to be cleared on
+// the last line, which meant anything thrown before the fetch -- as a stale
+// reference to the old collapsing readout just did -- left busy stuck true and
+// the whole picker dead for the rest of the session.
+async function run(sample,btn){
+  document.querySelectorAll('.chip').forEach(c=>{
+    c.classList.remove('on');
+    const cls=c.dataset.cls;
+    if(cls){c.style.background=ccA(cls,0.07);c.style.borderColor=ccA(cls,0.30);}
+  });
+  if(btn){btn.classList.add('on');
+    btn.style.background=ccA(sample.label,0.18);
+    btn.style.borderColor=cc(sample.label);}
+  const em=g('empty'); if(em)em.remove();
   g('hint').textContent='reading expression...';
   buildHeat(sample.features);
-  ro.scrollIntoView({behavior:'smooth',block:'nearest'});
+  g('readout').scrollIntoView({behavior:'smooth',block:'nearest'});
   try{
     const r=await fetch('/predict',{method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({features:sample.features})});
     const d=await r.json();
     const ok=d.prediction===sample.label;
-    g('verdict').innerHTML='<span class="big"><span class="cdot" style="background:'+
+    g('verdict').innerHTML='<span class="big" style="background:'+ccA(d.prediction,0.12)+
+      ';border-color:'+ccA(d.prediction,0.38)+'"><span class="cdot" style="background:'+
       cc(d.prediction)+'"></span>'+d.prediction+'</span>'+
       '<span class="match '+(ok?'ok':'no')+'">'+(ok?'✓ matches actual':'✗ actual: '+sample.label)+'</span>';
     g('top3').innerHTML=d.top3.map((t,i)=>{
@@ -544,7 +635,6 @@ async function predict(sample,btn){
         '<span class="pct">'+pct+'%</span></div>';}).join('');
     g('hint').textContent='293 gene values -> live model -> prediction ('+(btn?'labelled cell':'random held-out cell')+')';
   }catch(e){ g('hint').textContent='Error: '+e; }
-  busy=false;
 }
 </script>
 </body></html>"""
