@@ -202,17 +202,23 @@ _LANDING_PAGE = """<!doctype html>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
+  /* Palette: viridis — the colormap single-cell expression is conventionally
+     plotted in — on a cool slate ground rather than white, so the page reads as
+     a figure from this field rather than a generic light theme. Deliberately
+     single-theme: a stained slide does not have a dark mode. */
   :root{
-    --bg:#0A0E14; --panel:#111823; --panel2:#0D141D; --line:#1E2A38;
-    --ink:#E7EEF6; --muted:#7C8CA0; --faint:#4C5B6E;
-    --accent:#4FD1C5; --accent2:#63B3ED; --hi:#F6708A; --lo:#37C6E8;
-    --good:#43D6A0; --bad:#F6708A;
+    --bg:#EBEEF1; --panel:#FFFFFF; --panel2:#FAFBFC; --chip:#F4F6F8; --line:#D6DCE2;
+    --ink:#17202A; --muted:#5F6E7B; --faint:#BCC6CF;
+    --accent:#2A788E; --accent2:#4B9B45;
+    --lo:#46327E; --hi:#D9B310;          /* viridis endpoints: indigo <-> yellow */
+    --good:#2F7D4F; --bad:#B3402E;
+    --shadow:0 1px 2px rgba(23,32,42,.05),0 8px 24px -12px rgba(23,32,42,.16);
     --sans:'IBM Plex Sans',system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
     --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
   }
   *{box-sizing:border-box}
   body{margin:0;background:
-      radial-gradient(1200px 520px at 50% -220px,#12242200,#0A0E14 72%),var(--bg);
+      radial-gradient(1100px 480px at 50% -200px,#DCE5E9,var(--bg) 70%),var(--bg);
     color:var(--ink);font-family:var(--sans);line-height:1.55;-webkit-font-smoothing:antialiased;}
   .wrap{max-width:820px;margin:0 auto;padding:clamp(2rem,6vw,4.5rem) 1.25rem 4rem;}
   .eyebrow{font-family:var(--mono);font-size:.72rem;letter-spacing:.28em;
@@ -232,55 +238,59 @@ _LANDING_PAGE = """<!doctype html>
     border-left:2px solid var(--line);padding-left:.75rem;line-height:1.5;}
   .explain.open{display:block;}
   .stats{display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:12px;
-    overflow:hidden;margin-bottom:2.4rem;}
+    overflow:hidden;margin-bottom:2.4rem;background:var(--panel);box-shadow:var(--shadow);}
   .stat{flex:1 1 22%;min-width:120px;padding:.85rem 1.1rem;border-right:1px solid var(--line);}
   .stat:last-child{border-right:0;}
-  .stat b{font-family:var(--mono);font-size:1.35rem;font-weight:500;display:block;letter-spacing:-.02em;}
+  .stat b{font-family:var(--mono);font-size:1.35rem;font-weight:500;display:block;letter-spacing:-.02em;
+    font-variant-numeric:tabular-nums;}
   .stat .k{margin:.15rem 0 0;letter-spacing:.1em;font-size:.64rem;}
   .panel{background:linear-gradient(180deg,var(--panel),var(--panel2));border:1px solid var(--line);
-    border-radius:16px;padding:1.5rem;margin-bottom:1.5rem;}
+    border-radius:16px;padding:1.5rem;margin-bottom:1.5rem;box-shadow:var(--shadow);}
   .chips{display:grid;grid-template-columns:1fr 1fr;gap:.55rem;}
   .chip{cursor:pointer;text-align:left;padding:.72rem .9rem;border-radius:10px;border:1px solid var(--line);
-    background:#0e1620;color:var(--ink);font-family:var(--sans);font-size:.92rem;
+    background:var(--chip);color:var(--ink);font-family:var(--sans);font-size:.92rem;
     transition:border-color .15s,background .15s,transform .06s;}
-  .chip:hover{border-color:var(--faint);background:#101c28;}
+  .chip:hover{border-color:var(--faint);background:#EDF1F4;}
   .chip:active{transform:translateY(1px);}
   .chip.on{border-color:var(--accent);}
-  .chip .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:.5rem;
-    vertical-align:middle;background:var(--accent);}
+  .chip .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:.5rem;
+    vertical-align:middle;background:var(--faint);}
   .chip .lab{font-family:var(--mono);font-size:.68rem;color:var(--muted);display:block;
     margin-top:.15rem;letter-spacing:.03em;}
   .rand{margin-top:.6rem;width:100%;cursor:pointer;padding:.72rem;border-radius:10px;
     border:1px dashed var(--line);background:transparent;color:var(--muted);font-family:var(--mono);
     font-size:.82rem;letter-spacing:.03em;transition:.15s;}
-  .rand:hover{color:var(--ink);border-color:var(--faint);background:#0e1620;}
+  .rand:hover{color:var(--ink);border-color:var(--faint);background:var(--chip);}
   .readout{margin-top:1.4rem;opacity:0;max-height:0;overflow:hidden;transition:opacity .4s ease;}
   .readout.show{opacity:1;max-height:none;}
   .rhead{font-family:var(--mono);font-size:.68rem;letter-spacing:.16em;text-transform:uppercase;
     color:var(--muted);display:flex;align-items:center;gap:.5rem;margin:.2rem 0 .6rem;}
-  .heat{display:flex;gap:1px;height:46px;border-radius:4px;overflow:hidden;}
-  .cell{flex:1 1 0;background:#16202c;opacity:0;transition:opacity .5s ease,background .5s ease;}
+  .heat{display:flex;gap:1px;height:52px;border-radius:5px;overflow:hidden;
+    border:1px solid var(--line);background:var(--chip);}
+  .cell{flex:1 1 0;background:var(--chip);opacity:0;transition:opacity .5s ease,background .5s ease;}
   .readout.show .cell{opacity:1;}
   .heatlabels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:.64rem;
     color:var(--muted);margin-top:.5rem;letter-spacing:.04em;}
   .swatch{display:inline-block;width:9px;height:9px;border-radius:2px;vertical-align:middle;margin:0 .25rem;}
   .verdict{display:flex;align-items:baseline;gap:.6rem;flex-wrap:wrap;margin:1.4rem 0 .2rem;}
-  .verdict .big{font-size:1.5rem;font-weight:600;letter-spacing:-.02em;color:var(--accent);}
+  .verdict .big{font-size:1.5rem;font-weight:600;letter-spacing:-.02em;color:var(--ink);
+    display:inline-flex;align-items:baseline;gap:.5rem;}
+  .verdict .big .cdot{width:11px;height:11px;border-radius:50%;flex:0 0 auto;align-self:center;}
   .verdict .sci{font-family:var(--mono);font-size:.8rem;color:var(--muted);}
   .match{font-family:var(--mono);font-size:.72rem;padding:.15rem .55rem;border-radius:20px;
     border:1px solid var(--line);}
-  .match.ok{color:var(--good);border-color:rgba(67,214,160,.4);}
-  .match.no{color:var(--bad);border-color:rgba(246,112,138,.4);}
+  .match.ok{color:var(--good);border-color:rgba(47,125,79,.45);background:rgba(47,125,79,.07);}
+  .match.no{color:var(--bad);border-color:rgba(179,64,46,.45);background:rgba(179,64,46,.07);}
   .bars{display:grid;gap:.5rem;margin-top:.4rem;}
   .brow{display:grid;grid-template-columns:11.5rem 1fr 3rem;gap:.7rem;align-items:center;
     font-family:var(--mono);font-size:.74rem;}
   .brow .gid{color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
   .brow.top .gid{color:var(--ink);}
-  .btrack{position:relative;height:15px;background:#0e1620;border-radius:4px;border:1px solid var(--line);}
+  .btrack{position:relative;height:15px;background:var(--chip);border-radius:4px;border:1px solid var(--line);
+    overflow:hidden;}
   .bfill{position:absolute;top:0;left:0;height:100%;border-radius:3px;background:var(--faint);
     transition:width .6s cubic-bezier(.2,.8,.2,1);}
-  .brow.top .bfill{background:linear-gradient(90deg,var(--accent),var(--accent2));}
-  .brow .pct{color:var(--muted);text-align:right;}
+  .brow .pct{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums;}
   .brow.top .pct{color:var(--ink);}
   .steps{display:grid;margin:.4rem 0 0;}
   .step{display:flex;gap:.9rem;padding:.78rem 0;border-top:1px solid var(--line);}
@@ -293,6 +303,8 @@ _LANDING_PAGE = """<!doctype html>
   footer a{color:var(--muted);text-decoration:none;border-bottom:1px solid var(--line);}
   footer a:hover{color:var(--ink);}
   .hint{font-size:.8rem;color:var(--faint);margin:1rem 0 0;font-family:var(--mono);}
+  :is(.chip,.rand,.q,footer a):focus-visible{outline:2px solid var(--accent);outline-offset:2px;
+    border-radius:6px;}
   @media(max-width:520px){.chips{grid-template-columns:1fr}.brow{grid-template-columns:8.5rem 1fr 2.6rem}}
   @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 </style></head>
@@ -334,7 +346,7 @@ _LANDING_PAGE = """<!doctype html>
     <div class="readout" id="readout">
       <div class="rhead"><span>Expression signature</span><button class="q">?</button></div>
       <p class="explain">Each stripe is one of the 293 genes' expression in this cell,
-         standardised against the training average. Cyan = under-expressed, red = over-expressed.</p>
+         standardised against the training average. Indigo = under-expressed, yellow = over-expressed &mdash; the two ends of the viridis scale these plots conventionally use. The colour scale is square-root, because most genes in any single cell sit close to the average; hover a stripe for its exact value.</p>
       <div class="heat" id="heat"></div>
       <div class="heatlabels">
         <span><span class="swatch" style="background:var(--lo)"></span>under-expressed</span>
@@ -367,7 +379,7 @@ _LANDING_PAGE = """<!doctype html>
     <div class="step"><span class="n">02</span><p><b>Balance &amp; tune</b> with SMOTE + undersampling
        applied <b>inside</b> each cross-validation fold &mdash; no resampling leakage.</p></div>
     <div class="step"><span class="n">03</span><p><b>Classify</b> with a tuned RBF support-vector
-       machine, served here on Fly.io as a live API.</p></div>
+       machine &mdash; exported to ONNX and served here as a live API.</p></div>
   </div>
 
   <footer>
@@ -381,10 +393,43 @@ _LANDING_PAGE = """<!doctype html>
 
 <script>
 const DATA = __DATA__;
-const C_LO=[55,198,232], C_NEUT=[22,32,44], C_HI=[246,112,138];
 function mix(a,b,t){return 'rgb('+a.map((v,i)=>Math.round(v+(b[i]-v)*t)).join(',')+')';}
-function divColor(z){const L=1.6,c=Math.max(-L,Math.min(L,z)),t=(c+L)/(2*L);
-  return t<0.5?mix(C_LO,C_NEUT,t*2):mix(C_NEUT,C_HI,(t-0.5)*2);}
+
+// Viridis, sampled at nine stops. Used two ways, and the distinction matters:
+// as a DIVERGING ramp for the expression strip (z-scores run either side of the
+// training mean, so indigo and yellow sit at the extremes and the page ground in
+// the middle), and as a CATEGORICAL scale for cell-type identity below. Reusing
+// a sequential colormap for diverging data is the kind of shortcut this project
+// exists to not take. Blue-yellow is also the safest axis for the common forms
+// of colour blindness, which red-green -- the previous ramp -- is not.
+const VIRIDIS=[[68,1,84],[72,40,120],[62,74,137],[49,104,142],[38,130,142],
+               [31,158,137],[53,183,121],[109,205,89],[180,222,44]];
+function viridis(t){const x=Math.max(0,Math.min(1,t))*(VIRIDIS.length-1),
+  i=Math.min(Math.floor(x),VIRIDIS.length-2);
+  return mix(VIRIDIS[i],VIRIDIS[i+1],x-i);}
+
+const C_LO=[70,50,126], C_NEUT=[221,226,231], C_HI=[217,179,16];
+
+// Square-root gain, not linear. Single-cell expression is zero-inflated: in any
+// one cell the median gene sits about -0.2 SD from the training mean and only 9
+// of the 293 clear +/-1.4, so a linear ramp puts almost every stripe on the
+// neutral and the strip reads as blank paper. Square root keeps the ordering and
+// the sign while giving the small deviations -- which is nearly all of the data
+// -- somewhere visible to sit. The exact z stays on each stripe's tooltip.
+function divColor(z){const L=2.0;
+  const t=Math.sign(z)*Math.min(1,Math.sqrt(Math.abs(z)/L));
+  return t<0?mix(C_NEUT,C_LO,-t):mix(C_NEUT,C_HI,t);}
+
+// Every cell type gets a fixed place on the ramp and keeps it everywhere it
+// appears -- picker dot, prediction, top-3, per-class F1 -- the way a cluster
+// keeps its colour across every panel of a single-cell figure. Colour is
+// identity here, not decoration, which is what makes the per-class chart
+// readable as the legend for the rest of the page. Capped at 0.78 because the
+// pale end of viridis disappears against a light ground.
+const CLASSES=DATA.classes||[];
+const CLASS_COLOR={};
+CLASSES.forEach((c,i)=>{CLASS_COLOR[c]=viridis(CLASSES.length>1?(i/(CLASSES.length-1))*0.78:0.4);});
+const cc=name=>CLASS_COLOR[name]||'var(--faint)';
 
 const samples=DATA.samples||[], genes=DATA.genes||[], stats=DATA.stats||{};
 const met=DATA.metrics||{};
@@ -408,7 +453,8 @@ const chips=g('chips'), seen={};
 (DATA.classes||[]).forEach(cls=>{
   const s=samples.find(x=>x.label===cls); if(!s)return;
   const b=document.createElement('button'); b.className='chip';
-  b.innerHTML='<span class="dot"></span>'+cls+'<span class="lab">held-out cell</span>';
+  b.innerHTML='<span class="dot" style="background:'+cc(cls)+'"></span>'+cls+
+    '<span class="lab">held-out cell</span>';
   b.addEventListener('click',()=>predict(s,b)); chips.appendChild(b);
 });
 g('rand').addEventListener('click',()=>{ if(samples.length)predict(samples[Math.floor(Math.random()*samples.length)],null); });
@@ -420,7 +466,7 @@ const rows=Object.keys(pc).map(k=>({name:k,f1:pc[k].f1,n:pc[k].support})).sort((
 g('perclass').innerHTML=rows.map(r=>
   '<div class="brow"><span class="gid" title="'+r.name+' (n='+r.n+')">'+r.name+'</span>'+
   '<div class="btrack"><div class="bfill" style="width:'+(r.f1*100).toFixed(0)+'%;'+
-  'background:linear-gradient(90deg,var(--accent),var(--accent2))"></div></div>'+
+  'background:'+cc(r.name)+'"></div></div>'+
   '<span class="pct">'+r.f1.toFixed(2)+'</span></div>').join('');
 
 function buildHeat(features){
@@ -438,8 +484,8 @@ function buildHeat(features){
 let busy=false;
 async function predict(sample,btn){
   if(busy)return; busy=true;
-  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
-  if(btn)btn.classList.add('on');
+  document.querySelectorAll('.chip').forEach(c=>{c.classList.remove('on');c.style.borderColor='';});
+  if(btn){btn.classList.add('on');btn.style.borderColor=cc(sample.label);}
   const ro=g('readout'); ro.classList.add('show');
   g('hint').textContent='reading expression...';
   buildHeat(sample.features);
@@ -449,12 +495,13 @@ async function predict(sample,btn){
       body:JSON.stringify({features:sample.features})});
     const d=await r.json();
     const ok=d.prediction===sample.label;
-    g('verdict').innerHTML='<span class="big">'+d.prediction+'</span>'+
+    g('verdict').innerHTML='<span class="big"><span class="cdot" style="background:'+
+      cc(d.prediction)+'"></span>'+d.prediction+'</span>'+
       '<span class="match '+(ok?'ok':'no')+'">'+(ok?'✓ matches actual':'✗ actual: '+sample.label)+'</span>';
     g('top3').innerHTML=d.top3.map((t,i)=>{
       const pct=(t.prob*100).toFixed(1);
       return '<div class="brow'+(i===0?' top':'')+'"><span class="gid" title="'+t.label+'">'+t.label+'</span>'+
-        '<div class="btrack"><div class="bfill" style="width:'+pct+'%"></div></div>'+
+        '<div class="btrack"><div class="bfill" style="width:'+pct+'%;background:'+cc(t.label)+'"></div></div>'+
         '<span class="pct">'+pct+'%</span></div>';}).join('');
     g('hint').textContent='293 gene values -> live model -> prediction ('+(btn?'labelled cell':'random held-out cell')+')';
   }catch(e){ g('hint').textContent='Error: '+e; }
